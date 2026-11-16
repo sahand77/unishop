@@ -80,6 +80,24 @@ test("کالاهای پیش‌نویس و ترکیب‌های غیرفعال د�
   await assert.rejects(() => quote([{ id:inactive.id,quantity:1 }],"تهران"),/موجودی/);
 });
 
+test("گالری مرتب ذخیره می‌شود و فرم قدیمی آن را پاک نمی‌کند", async () => {
+  const entry = await inventory();
+  const saved = (await product(entry.id))!;
+  assert.deepEqual(saved.gallery,[]);
+  const media = [
+    { kind:"video",url:"/demo/example.mp4" },
+    { kind:"image",url:"/demo/example.jpg" },
+  ];
+  await saveProduct({ ...saved,gallery:media });
+  const updated = (await product(entry.id,true))!;
+  assert.deepEqual(updated.gallery,media);
+  assert.equal(updated.image,"/demo/example.jpg");
+  const { gallery: _, ...legacy } = updated;
+  await saveProduct({ ...legacy,title:"عنوان تازه" });
+  assert.deepEqual((await product(entry.id))!.gallery,media);
+  await assert.rejects(() => saveProduct({ ...legacy,gallery:[{ kind:"image",url:"/demo/example.mp4" }] }));
+});
+
 test("تأیید مبلغ جدید، رزرو آخرین واحد، و تأیید تکراری پرداخت", async () => {
   const a = await inventory();
   const shown = await quote(a.lines,"تهران");

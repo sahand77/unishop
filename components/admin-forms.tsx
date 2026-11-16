@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { ImagePlus, Plus, Save, Sparkles, Trash2 } from "lucide-react";
 import { putCategory, putProduct, signIn } from "@/app/actions";
 import { fa, selectionKey, type Attribute, type Category, type Offer, type Product } from "@/lib/shared";
+import type { ProductMedia } from "@/lib/product-media";
+import { MediaEditor, uploadMedia } from "./media-editor";
 import { ProductImage } from "./store-interactions";
 
 export function LoginForm() {
@@ -36,11 +38,8 @@ function ImageField({ image,onChange,onBusy,label }: {
     if (!file) return;
     setError(""); setBusy(true); onBusy(true);
     try {
-      const form = new FormData();
-      form.set("file",file);
-      const response = await fetch("/api/uploads",{ method:"POST",body:form });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error);
+      const result = await uploadMedia(file);
+      if (result.kind !== "image") throw new Error("برای تصویر اصلی یا ترکیب، فایل عکس انتخاب کنید.");
       onChange(result.url);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "بارگذاری تصویر انجام نشد.");
@@ -93,6 +92,7 @@ export function ProductForm({ initial,categories }: { initial?: Product; categor
   const [description,setDescription] = useState(initial?.description || "");
   const [category,setCategory] = useState(initial?.categoryId || "");
   const [image,setImage] = useState(initial?.image || "");
+  const [gallery,setGallery] = useState<ProductMedia[]>(initial?.gallery || []);
   const [kind,setKind] = useState(initial?.kind || "simple");
   const [attributes,setAttributes] = useState<Attribute[]>(initial?.attributes || []);
   const [simple,setSimple] = useState(initial?.kind === "simple" ? initial.offers[0] || empty : empty);
@@ -148,7 +148,7 @@ export function ProductForm({ initial,categories }: { initial?: Product; categor
     setFeedback({});
     start(async () => {
       try {
-        const result = await putProduct({ id,title,description,categoryId:category,image,kind,status,
+        const result = await putProduct({ id,title,description,categoryId:category,image,gallery,kind,status,
           attributes:kind === "simple" ? [] : attributes,offers:offers.map((item) => ({ ...item, expectedStock:expectedStock[item.id] })) });
         if (!result.id) { setFeedback({ error:result.error }); return; }
         setId(result.id); setExpectedStock(Object.fromEntries(offers.map((item) => [item.id,item.stock])));
@@ -176,6 +176,9 @@ export function ProductForm({ initial,categories }: { initial?: Product; categor
           <option value="simple">کالای ساده</option><option value="variable">کالای متغیر</option></select></label>
       </div>
       <ImageField label="تصویر اصلی کالا" image={image} onChange={setImage} onBusy={changeBusy}/>
+    </fieldset>
+    <fieldset className="panel" disabled={pending || busy > 0}>
+      <MediaEditor items={gallery} onChange={setGallery} onBusy={changeBusy}/>
     </fieldset>
     {kind === "simple" ? <fieldset className="panel flow" disabled={pending}>
       <h2>قیمت و موجودی</h2><OfferFields item={{ ...simple,active:false }} update={(patch) => setSimple((before) => ({ ...before,...patch }))} variant={false} onBusy={changeBusy}/>

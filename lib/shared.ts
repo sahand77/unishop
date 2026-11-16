@@ -20,10 +20,12 @@ export type Offer = {
   id: string; options: Record<string, string>; price: number; stock: number;
   weight: number; sku: string; image: string; active: boolean; reserved: number;
 };
+import type { ProductMedia } from "./product-media";
+
 export type Product = {
   id: string; title: string; description: string; categoryId: string;
   kind: "simple" | "variable"; status: "draft" | "published";
-  image: string; attributes: Attribute[]; offers: Offer[];
+  image: string; gallery: ProductMedia[]; attributes: Attribute[]; offers: Offer[];
 };
 export type CartLine = { id: string; quantity: number };
 export type Quote = {

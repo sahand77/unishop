@@ -5,9 +5,9 @@ export async function migrate() {
     await client.query(`
       CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY);
     `);
-    if ((await client.query("SELECT 1 FROM schema_migrations WHERE version=1")).rowCount) return;
-
-    await client.query(`
+    const { rows } = await client.query<{ version: number }>("SELECT version FROM schema_migrations");
+    const versions = new Set(rows.map((row) => row.version));
+    if (!versions.has(1)) await client.query(`
       CREATE TABLE admins (id TEXT PRIMARY KEY, username TEXT UNIQUE NOT NULL, password TEXT NOT NULL);
       CREATE TABLE sessions (token TEXT PRIMARY KEY, admin_id TEXT REFERENCES admins(id) NOT NULL, expires BIGINT NOT NULL);
       CREATE TABLE categories (id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL);
@@ -38,6 +38,10 @@ export async function migrate() {
         reference TEXT, message TEXT, created BIGINT NOT NULL, request_started BIGINT NOT NULL
       );
       INSERT INTO schema_migrations VALUES (1);
+    `);
+    if (!versions.has(2)) await client.query(`
+      ALTER TABLE products ADD COLUMN gallery JSONB NOT NULL DEFAULT '[]'::jsonb;
+      INSERT INTO schema_migrations VALUES (2);
     `);
   });
 }

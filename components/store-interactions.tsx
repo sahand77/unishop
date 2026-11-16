@@ -1,9 +1,10 @@
 "use client";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, ImageOff, Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { ArrowLeft, ImageOff, Menu, Minus, Search, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { checkout, getQuote } from "@/app/actions";
-import { fa, money, provinces, selectionKey, type Product, type Quote } from "@/lib/shared";
+import { fa, money, provinces, type Category, type Quote } from "@/lib/shared";
 import { useCart } from "./cart-context";
 
 export function ProductImage({ src, title, className }: { src: string; title: string; className?: string }) {
@@ -11,45 +12,34 @@ export function ProductImage({ src, title, className }: { src: string; title: st
     : <div className={`image-empty ${className || ""}`} role="img" aria-label="بدون تصویر"><ImageOff size={30}/></div>;
 }
 
+export function StoreSearch() {
+  const search = useSearchParams().get("q") ?? "";
+  return <form className="store-search" role="search" action="/#products" method="get">
+    <button aria-label="جست‌وجو"><Search size={21}/></button>
+    <input key={search} defaultValue={search} type="search" name="q" aria-label="جست‌وجوی کالا"
+      placeholder="جست‌وجو در یونی‌شاپ" maxLength={100}/>
+  </form>;
+}
+
+export function StoreCategories({ groups }: { groups: Category[] }) {
+  const menu = useRef<HTMLDetailsElement>(null);
+  function close() {
+    if (menu.current) menu.current.open = false;
+  }
+
+  return <details ref={menu} className="store-categories">
+    <summary><Menu size={19}/> دسته‌بندی‌ها</summary>
+    <nav aria-label="دسته‌بندی‌های فروشگاه">
+      <Link href="/#products" onClick={close}>همهٔ کالاها</Link>
+      {groups.map((group) => <Link key={group.id} href={`/?category=${group.id}#products`} onClick={close}>{group.name}</Link>)}
+    </nav>
+  </details>;
+}
+
 export function CartLink() {
   const { items } = useCart();
   return <Link href="/cart" className="cart-link"><ShoppingBag size={18}/><span>سبد خرید</span>
     <span className="cart-count">{fa(items.reduce((sum,item) => sum+item.quantity,0))}</span></Link>;
-}
-
-export function ProductPicker({ product }: { product: Product }) {
-  const { add, items, ready } = useCart();
-  const [selected,setSelected] = useState<Record<string,string>>({});
-  const [added,setAdded] = useState(false);
-  const active = product.offers.filter((offer) => offer.active);
-  const current = product.kind === "simple" ? active[0] : active.find((offer) => selectionKey(offer.options) === selectionKey(selected));
-  const variant = current ? product.attributes.map((a) => a.values.find((v) => v.id === current.options[a.id])?.name).join(" / ") : "";
-  const available = current?.stock ?? 0;
-  const quantity = items.find((item) => item.id === current?.id)?.quantity ?? 0;
-  const complete = Object.keys(selected).length === product.attributes.length;
-  return <div className="product-detail">
-    <ProductImage className="detail-image" src={current?.image || product.image} title={product.title}/>
-    <div className="detail-copy flow">
-      <h1>{product.title}</h1><p className="description">{product.description}</p>
-      {product.attributes.map((attribute) => <fieldset className="option-field" key={attribute.id}>
-        <legend>{attribute.name}</legend><div className="options">
-          {attribute.values.map((value) => <button type="button" key={value.id} aria-pressed={selected[attribute.id] === value.id}
-            onClick={() => { setAdded(false); setSelected({ ...selected,[attribute.id]:value.id }); }}>
-            {value.name}
-          </button>)}
-        </div>
-      </fieldset>)}
-      <div className="detail-price">{current ? money(current.price) : complete ? "ترکیب در دسترس نیست" : "ویژگی‌های کالا را انتخاب کنید"}</div>
-      {current && <p className={available ? "stock ok" : "stock"}>{available ? `${fa(available)} عدد موجود` : "ناموجود"}</p>}
-      <button className="button primary add-button" type="button" disabled={!ready || !current || available <= quantity || quantity >= 99}
-        onClick={() => { if (current) { add({ id:current.id,productId:product.id,title:product.title,price:current.price,
-          image:current.image || product.image,variant,quantity:1 },available); setAdded(true); } }}>
-        {added ? <Check size={19}/> : <ShoppingBag size={19}/>}
-        {added ? "به سبد اضافه شد" : available > 0 && quantity >= Math.min(available,99) ? "سقف تعداد در سبد" : "افزودن به سبد خرید"}
-      </button>
-      {added && <Link href="/cart">مشاهدهٔ سبد خرید <ArrowLeft size={15}/></Link>}
-    </div>
-  </div>;
 }
 
 export function CartScreen() {

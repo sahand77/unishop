@@ -11,7 +11,7 @@ async function main() {
     const prompt = createInterface({ input: stdin, output: stdout });
     try {
       if (stdin.isTTY) throw new Error("رمز را از طریق متغیر محیطی UNISHOP_ADMIN_PASSWORD وارد کنید.");
-      password = await prompt.question("");
+      password = (await prompt.question("")).replace(/^\uFEFF/, "");
     } finally {
       prompt.close();
     }

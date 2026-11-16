@@ -2,10 +2,17 @@ import type { PoolClient } from "pg";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { db, transaction } from "./db";
+import { galleryLimit } from "./product-media";
 import { selectionKey, type Category, type Offer, type Product } from "./shared";
 
 const id = z.string().regex(/^[A-Za-z0-9-]{1,80}$/);
-const image = z.string().max(500).refine((value) => !value || /^\/(uploads|demo)\/[a-z0-9.-]+$/i.test(value));
+const imageUrl = /^\/(uploads|demo)\/[a-z0-9-]+\.(jpg|jpeg|png|webp)$/i;
+const videoUrl = /^\/(uploads|demo)\/[a-z0-9-]+\.(mp4|webm)$/i;
+const image = z.string().max(500).refine((value) => !value || imageUrl.test(value));
+const gallery = z.array(z.discriminatedUnion("kind",[
+  z.object({ kind:z.literal("image"),url:z.string().max(500).regex(imageUrl) }),
+  z.object({ kind:z.literal("video"),url:z.string().max(500).regex(videoUrl) }),
+])).max(galleryLimit).refine((items) => new Set(items.map((item) => item.url)).size === items.length);
 export const integer = z.number().int().min(0).max(1_000_000_000);
 const attributeSchema = z.object({
   id, name: z.string().trim().min(1).max(60),
@@ -19,14 +26,14 @@ const offerSchema = z.object({
 const productSchema = z.object({
   id: id.optional(), title: z.string().trim().min(1).max(150), description: z.string().trim().max(10000),
   categoryId: z.union([id, z.literal("")]), kind: z.enum(["simple", "variable"]),
-  status: z.enum(["draft", "published"]), image,
+  status: z.enum(["draft", "published"]), image, gallery: gallery.optional(),
   attributes: z.array(attributeSchema).max(8), offers: z.array(offerSchema).max(300),
 });
 
 type OfferRow = Omit<Offer, "options" | "active"> & { options: string; active: number };
 type ProductRow = Omit<Product, "attributes" | "offers"> & { attributes: string; offers: OfferRow[] };
 const productSelect = `SELECT p.id, p.title, p.description, coalesce(p.category_id,'') AS "categoryId",
-  p.kind, p.status, p.image, p.attributes, coalesce(v.offers,'[]'::json) AS offers
+  p.kind, p.status, p.image, p.gallery, p.attributes, coalesce(v.offers,'[]'::json) AS offers
   FROM products p
   LEFT JOIN LATERAL (
     SELECT json_agg(o ORDER BY o.sequence) AS offers FROM (
@@ -43,10 +50,18 @@ function hydrate(row: ProductRow): Product {
   };
 }
 
-export async function products(publicOnly = false, category = "") {
+export async function products(publicOnly = false, category = "", search = "") {
   const { rows } = await db().query<ProductRow>(`${productSelect}
     WHERE (NOT $1::boolean OR p.status='published') AND ($2='' OR p.category_id=$2)
-    ORDER BY p.updated DESC, p.sequence DESC`,[publicOnly,category]);
+      AND ($3='' OR strpos(translate(lower(p.title),'كي','کی'),translate(lower($3),'كي','کی')) > 0)
+    ORDER BY p.updated DESC, p.sequence DESC`,[publicOnly,category,search]);
+  return rows.map(hydrate);
+}
+
+export async function relatedProducts(id: string, categoryId: string) {
+  const { rows } = await db().query<ProductRow>(`${productSelect}
+    WHERE p.status='published' AND p.id<>$1
+    ORDER BY (coalesce(p.category_id,'') = $2) DESC, p.updated DESC, p.sequence DESC LIMIT 4`,[id,categoryId]);
   return rows.map(hydrate);
 }
 
@@ -123,12 +138,14 @@ export async function saveProduct(input: unknown, createOnly = false) {
         throw new Error("شناسهٔ ترکیب معتبر نیست.");
       }
     }
-    await client.query(`INSERT INTO products (id,title,description,category_id,kind,status,image,attributes,updated)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+    const media = item.gallery ?? previous?.gallery ?? [];
+    const cover = item.image || media.find((entry) => entry.kind === "image")?.url || "";
+    await client.query(`INSERT INTO products (id,title,description,category_id,kind,status,image,attributes,updated,gallery)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
       ON CONFLICT(id) DO UPDATE SET title=excluded.title,description=excluded.description,
       category_id=excluded.category_id,kind=excluded.kind,status=excluded.status,image=excluded.image,
-      attributes=excluded.attributes,updated=excluded.updated`,[productId,item.title,item.description,item.categoryId || null,
-      item.kind,item.status,item.image,JSON.stringify(attributes),Date.now()]);
+      attributes=excluded.attributes,updated=excluded.updated,gallery=excluded.gallery`,[productId,item.title,item.description,item.categoryId || null,
+      item.kind,item.status,cover,JSON.stringify(attributes),Date.now(),JSON.stringify(media)]);
     await client.query("UPDATE offers SET archived=1 WHERE product_id=$1",[productId]);
     for (const offer of offers) {
       await client.query(`INSERT INTO offers (id,product_id,options,combination,price,stock,weight,sku,image,active)

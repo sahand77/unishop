@@ -1,42 +1,58 @@
 import { randomUUID } from "node:crypto";
 import { categories, saveCategory, saveProduct } from "../lib/catalog";
+import { closeDb, db } from "../lib/db";
+import type { ProductMedia } from "../lib/product-media";
 import { rules, saveRule } from "../lib/shipping";
-import type { Offer } from "../lib/shared";
-import { closeDb } from "../lib/db";
+
+const scarfGallery: ProductMedia[] = [
+  { kind:"image",url:"/demo/sadena-wool-2.webp" },
+  { kind:"image",url:"/demo/sadena-wool-3.webp" },
+  { kind:"image",url:"/demo/sadena-wool-4.webp" },
+  { kind:"video",url:"/demo/sadena-wool.mp4" },
+];
 
 const catalog = [
-  { id: "demo-headphones", title: "هدفون بی‌سیم استودیو", category: "دیجیتال", image: "headphones", price: 2890000, weight: 320,
-    description: "هدفون بی‌سیم دورگوشی برای شنیدن موسیقی، پادکست و تماس‌های روزمره. پدهای نرم و هدبند قابل تنظیم به استفادهٔ راحت‌تر کمک می‌کنند." },
-  { id: "demo-shoes", title: "کتانی روزمرهٔ رانر", category: "پوشاک", image: "shoes", price: 2350000, weight: 680,
-    description: "کتانی سبک برای پیاده‌روی و استفادهٔ روزانه. سایز و رنگ دلخواه را از میان ترکیب‌های موجود انتخاب کنید." },
-  { id: "demo-watch", title: "ساعت مچی کلاسیک", category: "اکسسوری", image: "watch", price: 1680000, weight: 180,
-    description: "ساعت مچی با صفحهٔ ساده و بند نرم. طراحی خلوت و خوانا برای استفادهٔ هر روز." },
-  { id: "demo-bag", title: "کوله‌پشتی شهری", category: "لوازم روزمره", image: "bag", price: 1490000, weight: 520,
-    description: "کوله‌پشتی سبک و جادار با بندهای قابل تنظیم، مناسب وسایل روزانه و رفت‌وآمد شهری." },
+  { id:"demo-sadena-67111427", title:"روسری پشمی زمستانی قواره ۹۰", category:"شال و روسری",
+    image:"/demo/sadena-wool-1.webp", price:1_765_000, weight:140, gallery:scarfGallery,
+    colors:[{ id:"black-brown",name:"مشکی نسکافه‌ای" },{ id:"ivory",name:"یخی شیری" },{ id:"beige",name:"کرم شیری" }],
+    description:"روسری دورو با طرح شکوفه و قوارهٔ ۹۰ سانتی‌متر. هر سمت رنگ متفاوتی دارد. ویدئوی گالری از عکس‌های کالا ساخته شده است." },
+  { id:"demo-sadena-67214720", title:"چادر مشکی لوکس طرح فروغ", category:"چادر",
+    image:"/demo/sadena-forough.webp", price:8_200_000, weight:450,
+    description:"چادر مشکی طرح فروغ برای پوشش مجلسی." },
+  { id:"demo-sadena-67024053", title:"چادر مشکی مجلسی جواهردوزی طرح سرو", category:"چادر",
+    image:"/demo/sadena-sarv.webp", price:8_400_000, weight:450,
+    description:"چادر مشکی مجلسی با جواهردوزی طرح سرو." },
+  { id:"demo-sadena-67023186", title:"چادر مشکی جواهردوزی طرح تک‌تاش", category:"چادر",
+    image:"/demo/sadena-taktash.webp", price:8_500_000, weight:450,
+    description:"چادر مشکی با تزیین جواهردوزی طرح تک‌تاش." },
 ];
+const previousDemoIds = ["demo-headphones","demo-shoes","demo-watch","demo-bag"];
 
 async function main() {
   for (const name of new Set(catalog.map((item) => item.category))) {
     if (!(await categories()).some((item) => item.name === name)) await saveCategory("",name);
   }
+  const groups = await categories();
   for (const entry of [...catalog].reverse()) {
-    const variable = entry.image === "shoes";
-    const attributes = variable ? [
-      { id: "color", name: "رنگ", values: [{ id: "red", name: "قرمز" }] },
-      { id: "size", name: "سایز", values: ["40","41","42"].map((id) => ({ id, name: id })) },
-    ] : [];
-    const offers: Omit<Offer,"reserved">[] = (variable ? ["40","41","42"] : ["one"]).map<Omit<Offer,"reserved">>((size,index) => ({
-      id: randomUUID(), options: Object.fromEntries(variable ? [["color","red"],["size",size]] : []),
-      price: entry.price + (variable && index === 2 ? 150000 : 0), stock: variable && index === 0 ? 0 : 12,
-      weight: entry.weight, sku: `${entry.image}-${size}`, image: "", active: true,
+    const { colors,category,...product } = entry;
+    const attributes = colors ? [{ id:"color",name:"رنگ",values:colors }] : [];
+    const offers = (colors ?? [{ id:"one" }]).map((color,index) => ({
+      id:randomUUID(), options:Object.fromEntries(colors ? [["color",color.id]] : []),
+      price:entry.price, stock:index === 0 ? 3 : 7,
+      weight:entry.weight, sku:`SADENA-${entry.id.split("-").at(-1)}-${color.id}`, image:"", active:true,
     }));
-    await saveProduct({ ...entry, categoryId: (await categories()).find((item) => item.name === entry.category)?.id,
-      status: "published", kind: variable ? "variable" : "simple", attributes, offers, image: `/demo/${entry.image}.jpg` },true);
+    await saveProduct({
+      ...product, categoryId:groups.find((item) => item.name === category)?.id,
+      description: `${entry.description}\nاین کالا برای آزمایش فروشگاه اضافه شده است.`,
+      kind: colors ? "variable" : "simple", status:"published", attributes, offers,
+    },true);
   }
+  // Retain references in old orders and hide only the four previous seed products.
+  await db().query("UPDATE products SET status='draft' WHERE id=ANY($1::text[])",[previousDemoIds]);
   if (!(await rules()).length) {
-    await saveRule({ id: "", name: "ارسال عادی", priority: 100, fee: 95000, provinces: [], categories: [],
-      minQuantity: null,maxQuantity: null,minWeight: null,maxWeight: null,minSubtotal: null,maxSubtotal: null });
+    await saveRule({ id:"",name:"ارسال عادی",priority:100,fee:95000,provinces:[],categories:[],
+      minQuantity:null,maxQuantity:null,minWeight:null,maxWeight:null,minSubtotal:null,maxSubtotal:null });
   }
-  console.log("کالاها و قانون ارسال نمونه آماده‌اند.");
+  console.log("کالاهای نمونهٔ سدنا آماده‌اند.");
 }
 main().catch((error: Error) => { console.error(error.message); process.exitCode = 1; }).finally(closeDb);
