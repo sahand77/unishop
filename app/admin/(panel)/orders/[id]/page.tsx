@@ -7,7 +7,7 @@ import { requireAdmin } from "@/lib/auth";
 
 export default async function OrderDetail({ params }: { params: Promise<{ id: string }> }) {
   await requireAdmin();
-  const item = order((await params).id);
+  const item = await order((await params).id);
   if (!item) notFound();
   const { customer, quote } = item;
   return <div className="flow"><nav className="breadcrumbs" aria-label="مسیر صفحه"><Link href="/admin/orders">سفارش‌ها</Link><span>جزئیات</span></nav>

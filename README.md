@@ -1,29 +1,57 @@
 # فروشگاه یونی‌شاپ
 
-یونی‌شاپ یک فروشگاه فارسی و راست‌به‌چپ با Next.js و SQLite است. پنل مدیریت برای تعریف کالای ساده و متغیر، دسته‌بندی، تعرفهٔ ارسال و بررسی سفارش‌ها استفاده می‌شود.
+یونی‌شاپ یک فروشگاه فارسی و راست‌به‌چپ با Next.js و PostgreSQL است. پنل مدیریت برای تعریف کالای ساده و متغیر، دسته‌بندی، تعرفهٔ ارسال و بررسی سفارش‌ها استفاده می‌شود.
 
-## راه‌اندازی روی ویندوز
+## راه‌اندازی با Docker Compose
 
-نسخهٔ ۲۲٫۱۳ یا بالاتر از Node.js لازم است. این دستورها را در PowerShell و از پوشهٔ پروژه اجرا کنید.
+در ویندوز، Docker Desktop را با کانتینرهای لینوکس اجرا کنید. در PowerShell و از پوشهٔ پروژه، فایل محلی تنظیمات را بسازید و برای PostgreSQL در آن یک رمز انتخاب کنید.
 
 ```powershell
-npm.cmd ci
-Copy-Item .env.example .env.local
-npm.cmd run seed
-npm.cmd run dev
+Copy-Item .env.example .env
+notepad .env
 ```
 
-فروشگاه در [صفحهٔ اصلی](http://127.0.0.1:3000) و پنل در [صفحهٔ ورود مدیر](http://127.0.0.1:3000/admin) باز می‌شود. دستور نمونه اختیاری است و چهار کالا و در صورت خالی بودن فهرست تعرفه‌ها، یک قانون ارسال عمومی با مبلغ ۹۵ هزار تومان اضافه می‌کند. اجرای دوبارهٔ آن تنظیمات کالاهای نمونهٔ موجود را حفظ می‌کند.
+مقدار `POSTGRES_PASSWORD` را در فایل ذخیره کنید، سپس این دستور را اجرا کنید.
+
+```powershell
+docker compose up -d --build --wait
+```
+
+برنامه هنگام شروع جدول‌ها را ایجاد می‌کند. فروشگاه در [صفحهٔ اصلی](http://127.0.0.1:3000) و پنل در [صفحهٔ ورود مدیر](http://127.0.0.1:3000/admin) باز می‌شوند. اگر پورت میزبان را با `APP_PORT` تغییر دادید، `APP_URL` را هم مطابق همان نشانی تنظیم کنید.
+
+برای افزودن کالاهای نمونه، دستور زیر را اجرا کنید. این دستور چهار کالا اضافه می‌کند و اگر فهرست تعرفه‌ها خالی باشد یک قانون ارسال عمومی با مبلغ ۹۵ هزار تومان می‌سازد.
+
+```powershell
+docker compose exec -T app npm run seed
+```
 
 ### ایجاد اولین مدیر
 
-رمز را در ورودی مخفی PowerShell وارد کنید. نام کاربری در مثال زیر `admin` است.
+رمز را در ورودی مخفی PowerShell وارد کنید. نام کاربری در این مثال `admin` است.
 
 ```powershell
-(Read-Host 'رمز مدیر، حداقل ۱۲ نویسه' -MaskInput) | npm.cmd run admin:create -- admin
+(Read-Host 'رمز مدیر، حداقل ۱۲ نویسه' -MaskInput) | docker compose exec -T app npm run admin:create -- admin
 ```
 
-داده‌ها در `data/shop.sqlite` و تصاویر بارگذاری‌شده در `data/uploads` ذخیره می‌شوند. این پوشه با راه‌اندازی دوبارهٔ برنامه باقی می‌ماند. برای پشتیبان‌گیری محلی، پس از توقف برنامه از کل پوشهٔ `data` کپی بگیرید.
+دیتابیس و تصاویر بارگذاری‌شده در دو فضای ذخیره‌سازی نام‌دار `postgres` و `uploads` می‌مانند. برای اجرای دوباره پس از توقف، فرمان `docker compose up -d --wait` را بزنید. برای تغییرات کد، گزینهٔ `--build` را هم اضافه کنید.
+
+### انتقال داده‌های نسخهٔ SQLite
+
+نسخهٔ قبلی را متوقف کنید. در محیطی که Node.js نسخهٔ ۲۲ و فایل قدیمی را دارد، تغییرات ثبت‌شده را در فایل اصلی SQLite بنویسید. سپس فایل را به کانتینر انتقال دهید. عملیات انتقال باید پیش از ساخت مدیر یا افزودن کالاهای نمونه در PostgreSQL انجام شود.
+
+```powershell
+node -e "const db = new (require('node:sqlite').DatabaseSync)('data/shop.sqlite'); const result = db.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get(); db.close(); if (result.busy) process.exit(1)"
+docker compose cp ./data/shop.sqlite app:/tmp/unishop.sqlite
+docker compose exec -T app npm run db:import-sqlite -- /tmp/unishop.sqlite
+docker compose exec -T -u root app rm /tmp/unishop.sqlite
+```
+
+اگر پوشهٔ `data/uploads` در نسخهٔ قبلی وجود دارد، آن را منتقل کنید و مالکیت پوشه را به کاربر برنامه بدهید. مدیران قبلی می‌توانند با همان رمز دوباره وارد شوند.
+
+```powershell
+docker compose cp ./data/uploads app:/app/data/
+docker compose exec -T -u root app chown -R node:node /app/data/uploads
+```
 
 ## تعریف کالا و ارسال
 
@@ -41,11 +69,15 @@ npm.cmd run dev
 
 ## بررسی پروژه
 
+برای بررسی کد روی میزبان، Node.js نسخهٔ ۲۲٫۱۳ یا بالاتر لازم است. برای آزمون‌های یکپارچه، نشانی یک PostgreSQL آزمایشی را در متغیر محیطی `TEST_DATABASE_URL` قرار دهید. آزمون‌ها در یک شِمای موقت اجرا می‌شوند.
+
 ```powershell
-npm.cmd test
+npm.cmd ci
 npm.cmd run typecheck
+npm.cmd test
 npm.cmd run build
-npm.cmd run start
 ```
+
+برای اجرای مستقیم با Node.js، نشانی دیتابیس را در `DATABASE_URL` داخل فایل محلی `.env.local` تنظیم کنید، سپس `npm.cmd run db:migrate` و `npm.cmd run dev` را اجرا کنید.
 
 عکس‌های کاتالوگ نمونه از [آنسپلش](https://unsplash.com/) هستند.

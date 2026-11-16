@@ -65,44 +65,44 @@ export async function initiate(item: Order) {
       ? { code: 100, authority: `sim-${randomUUID()}` }
       : await call(item.mode,"request",{ amount: item.amount, currency: "IRR",
           callback_url: callback.href, description: `سفارش یونی‌شاپ ${item.id.slice(0,8)}` });
-    if (response.code !== 100) return settle(item.id,"failed",`درگاه درخواست را نپذیرفت. کد ${response.code}`)!;
+    if (response.code !== 100) return settle(item.id,"failed",`درگاه درخواست را نپذیرفت. کد ${response.code}`);
     if (!response.authority || !/^[A-Za-z0-9-]{1,100}$/.test(response.authority)) {
       throw new Error("شناسهٔ معتبر پرداخت دریافت نشد.");
     }
-    db().prepare("UPDATE orders SET authority=?,message=NULL WHERE id=? AND status='pending' AND authority IS NULL")
-      .run(response.authority,item.id);
-    return order(item.id)!;
+    await db().query("UPDATE orders SET authority=$1,message=NULL WHERE id=$2 AND status='pending' AND authority IS NULL",
+      [response.authority,item.id]);
+    return (await order(item.id))!;
   } catch {
-    return settle(item.id,"review","درخواست پرداخت بی‌پاسخ ماند. از پنل دوباره بررسی کنید.")!;
+    return settle(item.id,"review","درخواست پرداخت بی‌پاسخ ماند. از پنل دوباره بررسی کنید.");
   }
 }
 
 export async function recheck(item: Order) {
   if (item.authority) return verify(item);
   const now = Date.now();
-  const claimed = db().prepare(`UPDATE orders SET status='pending',request_started=? WHERE id=? AND authority IS NULL
-    AND (status='review' OR (status='pending' AND request_started<=?))`).run(now,item.id,now-30_000);
-  return claimed.changes ? initiate(item) : order(item.id)!;
+  const claimed = await db().query(`UPDATE orders SET status='pending',request_started=$1 WHERE id=$2 AND authority IS NULL
+    AND (status='review' OR (status='pending' AND request_started<=$3))`,[now,item.id,now-30_000]);
+  return claimed.rowCount ? initiate(item) : (await order(item.id))!;
 }
 
 export async function verify(item: Order, returnedStatus?: string) {
-  if (!item.authority || !["review","pending"].includes(item.status)) return order(item.id)!;
+  if (!item.authority || !["review","pending"].includes(item.status)) return (await order(item.id))!;
   if (item.mode === "simulator") {
-    if (returnedStatus === "OK") return settle(item.id,"paid","پرداخت شبیه‌سازی شد.",`TEST-${item.id.slice(0,8)}`)!;
-    if (returnedStatus === "NOK") return settle(item.id,"canceled","پرداخت شبیه‌سازی‌شده لغو شد.")!;
-    return settle(item.id,"review","در انتظار انتخاب نتیجه در درگاه شبیه‌ساز.")!;
+    if (returnedStatus === "OK") return settle(item.id,"paid","پرداخت شبیه‌سازی شد.",`TEST-${item.id.slice(0,8)}`);
+    if (returnedStatus === "NOK") return settle(item.id,"canceled","پرداخت شبیه‌سازی‌شده لغو شد.");
+    return settle(item.id,"review","در انتظار انتخاب نتیجه در درگاه شبیه‌ساز.");
   }
   try {
     validateGateway(item.mode);
     const result = await call(item.mode,"verify",{ amount: item.amount, authority: item.authority });
     if (result.code === 100 || result.code === 101) {
-      return settle(item.id,"paid","پرداخت تأیید شد.",result.ref_id == null ? null : String(result.ref_id))!;
+      return settle(item.id,"paid","پرداخت تأیید شد.",result.ref_id == null ? null : String(result.ref_id));
     }
     if (result.code === -52 || (result.code === -51 && returnedStatus === "NOK")) {
-      return settle(item.id,returnedStatus === "NOK" ? "canceled" : "failed",`پرداخت ناموفق بود. کد ${result.code}`)!;
+      return settle(item.id,returnedStatus === "NOK" ? "canceled" : "failed",`پرداخت ناموفق بود. کد ${result.code}`);
     }
-    return settle(item.id,"review",`تأیید قطعی دریافت نشد. کد ${result.code}`)!;
+    return settle(item.id,"review",`تأیید قطعی دریافت نشد. کد ${result.code}`);
   } catch {
-    return settle(item.id,"review","ارتباط با درگاه برقرار نشد. دوباره بررسی کنید.")!;
+    return settle(item.id,"review","ارتباط با درگاه برقرار نشد. دوباره بررسی کنید.");
   }
 }

@@ -6,8 +6,7 @@ import { requireAdmin } from "@/lib/auth";
 
 export default async function Shipping() {
   await requireAdmin();
-  const list = rules();
-  const groups = categories();
+  const [list,groups] = await Promise.all([rules(),categories()]);
   return <div className="flow"><h1>قوانین ارسال</h1>
     <section className="panel flow"><h2>قوانین موجود</h2>
       <p className="muted">اولین قانون منطبق با سبد اعمال می‌شود. در اولویت برابر، قانون قدیمی‌تر ابتدا بررسی می‌شود.</p>

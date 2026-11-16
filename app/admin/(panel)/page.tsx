@@ -7,12 +7,12 @@ import { requireAdmin } from "@/lib/auth";
 
 export default async function Dashboard() {
   await requireAdmin();
-  const list = orders();
+  const [list,items,groups] = await Promise.all([orders(),products(),categories()]);
   return <div className="flow">
     <header className="section-head"><h1>پیشخوان</h1><Link className="button primary" href="/admin/products/new"><Plus size={17}/> افزودن کالا</Link></header>
     <div className="metrics">{[
-      { title:"کالاها",value:products().length,href:"/admin/products",icon:Boxes },
-      { title:"دسته‌بندی‌ها",value:categories().length,href:"/admin/categories",icon:FolderTree },
+      { title:"کالاها",value:items.length,href:"/admin/products",icon:Boxes },
+      { title:"دسته‌بندی‌ها",value:groups.length,href:"/admin/categories",icon:FolderTree },
       { title:"سفارش‌ها",value:list.length,href:"/admin/orders",icon:ClipboardList },
     ].map(({ title,value,href,icon:Icon }) => <Link href={href} key={href} className="panel metric"><Icon size={23}/><span>{title}</span><strong>{fa(value)}</strong></Link>)}</div>
     <section className="panel flow"><div className="section-head"><h2>سفارش‌های اخیر</h2><Link href="/admin/orders">همهٔ سفارش‌ها</Link></div>

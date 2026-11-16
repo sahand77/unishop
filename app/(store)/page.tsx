@@ -8,8 +8,7 @@ export const dynamic = "force-dynamic";
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ category?: string }> }) {
   const { category = "" } = await searchParams;
-  const groups = categories();
-  const items = products(true,category);
+  const [groups,items] = await Promise.all([categories(),products(true,category)]);
   const featured = items.find((item) => item.id === "demo-headphones" && item.image === "/demo/headphones.jpg");
   return <main className="wrap shop-main">
     {!category && <section className={`hero ${featured ? "" : "hero-no-photo"}`}>

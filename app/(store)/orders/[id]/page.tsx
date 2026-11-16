@@ -8,7 +8,7 @@ import { money,paymentLabels } from "@/lib/shared";
 export default async function Receipt({ params,searchParams }: {
   params: Promise<{ id: string }>; searchParams: Promise<{ token?: string }>;
 }) {
-  const item = order((await params).id);
+  const item = await order((await params).id);
   if (!item || item.secret !== (await searchParams).token) notFound();
   const awaiting = item.status === "pending" || item.status === "review";
   return <main className="wrap narrow interior flow"><section className="panel flow">

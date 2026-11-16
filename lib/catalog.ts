@@ -1,3 +1,4 @@
+import type { PoolClient } from "pg";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { db, transaction } from "./db";
@@ -23,58 +24,57 @@ const productSchema = z.object({
 });
 
 type OfferRow = Omit<Offer, "options" | "active"> & { options: string; active: number };
-type ProductRow = Omit<Product, "attributes" | "offers"> & { attributes: string };
-const productSelect = `SELECT id, title, description, coalesce(category_id,'') AS categoryId,
-  kind, status, image, attributes FROM products`;
+type ProductRow = Omit<Product, "attributes" | "offers"> & { attributes: string; offers: OfferRow[] };
+const productSelect = `SELECT p.id, p.title, p.description, coalesce(p.category_id,'') AS "categoryId",
+  p.kind, p.status, p.image, p.attributes, coalesce(v.offers,'[]'::json) AS offers
+  FROM products p
+  LEFT JOIN LATERAL (
+    SELECT json_agg(o ORDER BY o.sequence) AS offers FROM (
+      SELECT id,options,price,stock,weight,sku,image,active,reserved,sequence
+      FROM offers WHERE product_id=p.id AND archived=0
+    ) o
+  ) v ON true`;
 
 function hydrate(row: ProductRow): Product {
-  const rows = db().prepare(`SELECT id,options,price,stock,weight,sku,image,active,reserved
-    FROM offers WHERE product_id=? AND archived=0 ORDER BY rowid`).all(row.id) as unknown as OfferRow[];
   return {
     ...row, attributes: JSON.parse(row.attributes),
-    offers: rows.map((offer) => ({ ...offer, options: JSON.parse(offer.options), active: !!offer.active })),
+    offers: row.offers.map(({ id,options,price,stock,weight,sku,image,active,reserved }) =>
+      ({ id,options:JSON.parse(options),price,stock,weight,sku,image,active:!!active,reserved })),
   };
 }
 
-export function products(publicOnly = false, category = "") {
-  const rows = db().prepare(`${productSelect}
-    WHERE (?=0 OR status='published') AND (?='' OR category_id=?) ORDER BY updated DESC, rowid DESC`)
-    .all(+publicOnly, category, category) as unknown as ProductRow[];
+export async function products(publicOnly = false, category = "") {
+  const { rows } = await db().query<ProductRow>(`${productSelect}
+    WHERE (NOT $1::boolean OR p.status='published') AND ($2='' OR p.category_id=$2)
+    ORDER BY p.updated DESC, p.sequence DESC`,[publicOnly,category]);
   return rows.map(hydrate);
 }
 
-export function product(id: string, publicOnly = false) {
-  const row = db().prepare(`${productSelect} WHERE id=? AND (?=0 OR status='published')`)
-    .get(id, +publicOnly) as unknown as ProductRow | undefined;
+export async function product(id: string, publicOnly = false, client: PoolClient | ReturnType<typeof db> = db()) {
+  const { rows:[row] } = await client.query<ProductRow>(`${productSelect} WHERE p.id=$1 AND (NOT $2::boolean OR p.status='published')`,
+    [id,publicOnly]);
   return row && hydrate(row);
 }
 
-export function categories() {
-  return (db().prepare("SELECT id,name FROM categories ORDER BY rowid").all() as unknown as Category[])
-    .map(({ id,name }) => ({ id,name }))
-    .sort((a, b) => a.name.localeCompare(b.name, "fa"));
+export async function categories() {
+  const { rows } = await db().query<Category>("SELECT id,name FROM categories");
+  return rows.sort((a, b) => a.name.localeCompare(b.name,"fa"));
 }
 
-export function saveCategory(categoryId: string, rawName: string) {
+export async function saveCategory(categoryId: string, rawName: string) {
   const name = rawName.trim();
   if (!name || name.length > 80) throw new Error("نام دسته را وارد کنید.");
-  if (db().prepare("SELECT id FROM categories WHERE name=? AND id<>?").get(name, categoryId)) {
-    throw new Error("این نام برای دستهٔ دیگری استفاده شده است.");
-  }
-  if (categoryId) {
-    if (!db().prepare("UPDATE categories SET name=? WHERE id=?").run(name, categoryId).changes) {
-      throw new Error("دسته پیدا نشد.");
-    }
-  } else {
-    db().prepare("INSERT INTO categories VALUES (?,?)").run(randomUUID(), name);
-  }
+  const result = categoryId
+    ? await db().query("UPDATE categories SET name=$1 WHERE id=$2",[name,categoryId])
+    : await db().query("INSERT INTO categories (id,name) VALUES ($1,$2) ON CONFLICT (name) DO NOTHING",[randomUUID(),name]);
+  if (!result.rowCount) throw new Error(categoryId ? "دسته پیدا نشد." : "این نام برای دستهٔ دیگری استفاده شده است.");
 }
 
 function unique(values: string[]) {
   return new Set(values).size === values.length;
 }
 
-export function saveProduct(input: unknown) {
+export async function saveProduct(input: unknown, createOnly = false) {
   const parsed = productSchema.safeParse(input);
   if (!parsed.success) throw new Error("عنوان، قیمت، وزن، موجودی و کد کالا را بررسی کنید.");
   const item = parsed.data;
@@ -100,15 +100,15 @@ export function saveProduct(input: unknown) {
       throw new Error("برای هر ترکیب یک مقدار معتبر از هر ویژگی انتخاب کنید.");
     }
   }
-  return transaction(() => {
-    const connection = db();
-    const previous = item.id ? product(item.id) : undefined;
-    if (item.id && !previous) throw new Error("کالا پیدا نشد.");
-    if (item.categoryId && !connection.prepare("SELECT 1 FROM categories WHERE id=?").get(item.categoryId)) {
+  return transaction(async (client) => {
+    const previous = item.id ? await product(item.id,false,client) : undefined;
+    if (createOnly && previous) return productId;
+    if (item.id && !previous && !createOnly) throw new Error("کالا پیدا نشد.");
+    if (item.categoryId && !(await client.query("SELECT 1 FROM categories WHERE id=$1",[item.categoryId])).rowCount) {
       throw new Error("دستهٔ انتخاب‌شده پیدا نشد.");
     }
     for (const offer of offers) {
-      if (connection.prepare("SELECT 1 FROM offers WHERE sku=? AND product_id<>? AND archived=0").get(offer.sku, productId)) {
+      if ((await client.query("SELECT 1 FROM offers WHERE sku=$1 AND product_id<>$2 AND archived=0",[offer.sku,productId])).rowCount) {
         throw new Error(`کد کالای «${offer.sku}» پیش‌تر استفاده شده است.`);
       }
       const existing = previous?.offers.find((old) => old.id === offer.id);
@@ -119,24 +119,24 @@ export function saveProduct(input: unknown) {
           || (existing.reserved > 0 && selectionKey(existing.options) !== selectionKey(offer.options)))) {
         throw new Error("ترکیب دارای رزرو فعال است و موجودی آن نباید از تعداد رزرو کمتر باشد.");
       }
-      if (!existing && connection.prepare("SELECT 1 FROM offers WHERE id=?").get(offer.id)) {
+      if (!existing && (await client.query("SELECT 1 FROM offers WHERE id=$1",[offer.id])).rowCount) {
         throw new Error("شناسهٔ ترکیب معتبر نیست.");
       }
     }
-    connection.prepare(`INSERT INTO products VALUES (?,?,?,?,?,?,?,?,?)
+    await client.query(`INSERT INTO products (id,title,description,category_id,kind,status,image,attributes,updated)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
       ON CONFLICT(id) DO UPDATE SET title=excluded.title,description=excluded.description,
       category_id=excluded.category_id,kind=excluded.kind,status=excluded.status,image=excluded.image,
-      attributes=excluded.attributes,updated=excluded.updated`)
-      .run(productId,item.title,item.description,item.categoryId || null,item.kind,item.status,item.image,
-        JSON.stringify(attributes),Date.now());
-    connection.prepare("UPDATE offers SET archived=1 WHERE product_id=?").run(productId);
+      attributes=excluded.attributes,updated=excluded.updated`,[productId,item.title,item.description,item.categoryId || null,
+      item.kind,item.status,item.image,JSON.stringify(attributes),Date.now()]);
+    await client.query("UPDATE offers SET archived=1 WHERE product_id=$1",[productId]);
     for (const offer of offers) {
-      connection.prepare(`INSERT INTO offers (id,product_id,options,combination,price,stock,weight,sku,image,active)
-        VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET options=excluded.options,
+      await client.query(`INSERT INTO offers (id,product_id,options,combination,price,stock,weight,sku,image,active)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(id) DO UPDATE SET options=excluded.options,
         combination=excluded.combination,price=excluded.price,stock=excluded.stock,weight=excluded.weight,
-        sku=excluded.sku,image=excluded.image,active=excluded.active,archived=0`)
-        .run(offer.id,productId,JSON.stringify(offer.options),selectionKey(offer.options),
-          offer.price,offer.stock,offer.weight,offer.sku,offer.image,+offer.active);
+        sku=excluded.sku,image=excluded.image,active=excluded.active,archived=0`,
+        [offer.id,productId,JSON.stringify(offer.options),selectionKey(offer.options),offer.price,
+          offer.stock,offer.weight,offer.sku,offer.image,+offer.active]);
     }
     return productId;
   });

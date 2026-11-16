@@ -1,3 +1,4 @@
+import type { PoolClient } from "pg";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { categories, integer } from "./catalog";
@@ -12,12 +13,12 @@ const schema = z.object({
   minSubtotal: bound, maxSubtotal: bound,
 });
 
-export function rules() {
-  return db().prepare("SELECT config FROM shipping ORDER BY priority, rowid").all()
-    .map((row) => JSON.parse(String(row.config)) as ShippingRule);
+export async function rules(client: PoolClient | ReturnType<typeof db> = db()) {
+  const { rows } = await client.query<{ config: string }>("SELECT config FROM shipping ORDER BY priority, sequence");
+  return rows.map((row) => JSON.parse(row.config) as ShippingRule);
 }
 
-export function saveRule(input: unknown) {
+export async function saveRule(input: unknown) {
   const result = schema.safeParse(input);
   if (!result.success) throw new Error("نام، اولویت، مبلغ و بازه‌های قانون ارسال را بررسی کنید.");
   const rule = result.data;
@@ -26,11 +27,11 @@ export function saveRule(input: unknown) {
       throw new Error("ابتدای بازه باید از انتهای آن کوچک‌تر یا برابر باشد.");
     }
   }
-  const categoryIds = new Set(categories().map((item) => item.id));
+  const categoryIds = new Set((await categories()).map((item) => item.id));
   if (rule.categories.some((id) => !categoryIds.has(id))) throw new Error("دستهٔ قانون ارسال معتبر نیست.");
   rule.id ||= randomUUID();
-  db().prepare(`INSERT INTO shipping VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET
-    priority=excluded.priority,config=excluded.config`).run(rule.id,rule.priority,JSON.stringify(rule));
+  await db().query(`INSERT INTO shipping (id,priority,config) VALUES ($1,$2,$3) ON CONFLICT(id) DO UPDATE SET
+    priority=excluded.priority,config=excluded.config`,[rule.id,rule.priority,JSON.stringify(rule)]);
 }
 
 export function matchingRule(list: ShippingRule[], stats: {

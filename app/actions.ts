@@ -31,7 +31,7 @@ export async function signOut() {
 export async function putCategory(_previous: string, form: FormData) {
   await requireAdmin();
   try {
-    saveCategory(String(form.get("id") || ""),String(form.get("name") || ""));
+    await saveCategory(String(form.get("id") || ""),String(form.get("name") || ""));
   } catch (error) {
     return message(error);
   }
@@ -42,7 +42,7 @@ export async function putCategory(_previous: string, form: FormData) {
 export async function putProduct(input: unknown) {
   await requireAdmin();
   try {
-    const id = saveProduct(input);
+    const id = await saveProduct(input);
     revalidatePath("/", "layout");
     return { id };
   } catch (error) {
@@ -53,7 +53,7 @@ export async function putProduct(input: unknown) {
 export async function putRule(input: unknown) {
   await requireAdmin();
   try {
-    saveRule(input);
+    await saveRule(input);
     revalidatePath("/admin/shipping");
     return {};
   } catch (error) {
@@ -63,20 +63,20 @@ export async function putRule(input: unknown) {
 
 export async function removeRule(id: string) {
   await requireAdmin();
-  db().prepare("DELETE FROM shipping WHERE id=?").run(id);
+  await db().query("DELETE FROM shipping WHERE id=$1",[id]);
   revalidatePath("/admin/shipping");
 }
 
 export async function retryPayment(id: string) {
   await requireAdmin();
-  const item = order(id);
+  const item = await order(id);
   if (item && ["review","pending"].includes(item.status)) await recheck(item);
   revalidatePath(`/admin/orders/${id}`);
 }
 
 export async function getQuote(lines: unknown, province: unknown) {
   try {
-    return { quote: quote(lines,province) };
+    return { quote: await quote(lines,province) };
   } catch (error) {
     return { error: message(error) };
   }
@@ -96,7 +96,7 @@ export async function checkout(input: {
   try {
     const mode = paymentMode();
     validateGateway(mode);
-    const result = reserveOrder({ lines: input.lines, customer: customer.data, shown: shown.data, attempt: input.attempt, mode });
+    const result = await reserveOrder({ lines: input.lines, customer: customer.data, shown: shown.data, attempt: input.attempt, mode });
     if (result.changed) return { changed: result.changed };
     const item = result.fresh ? await initiate(result.order) : result.order;
     return { url: ["pending","review"].includes(item.status) ? gatewayLink(item) : `/orders/${item.id}?token=${item.secret}`, orderId: item.id };

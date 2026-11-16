@@ -2,13 +2,17 @@
   "name": "unishop",
   "version": "0.1.0",
   "private": true,
-  "engines": { "node": ">=22.13" },
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1",
     "build": "next build",
     "start": "next start --hostname 127.0.0.1",
     "typecheck": "tsc --noEmit",
-    "test": "node --disable-warning=ExperimentalWarning --import tsx --test tests/*.test.ts",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "db:migrate": "node --env-file-if-exists=.env.local --import tsx scripts/migrate.ts",
+    "db:import-sqlite": "node --env-file-if-exists=.env.local --import tsx scripts/import-sqlite.ts",
     "admin:create": "node --env-file-if-exists=.env.local --import tsx scripts/create-admin.ts",
     "seed": "node --env-file-if-exists=.env.local --import tsx scripts/seed.ts"
   },
@@ -16,15 +20,17 @@
     "@fontsource/vazirmatn": "5.3.0",
     "lucide-react": "^0.468.0",
     "next": "16.4.6",
+    "pg": "^8.23.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "tsx": "^4.23.15",
     "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/node": "^22",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "tsx": "^4",
     "typescript": "^5.9"
   }
 }

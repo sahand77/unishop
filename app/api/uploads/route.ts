@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { currentAdmin } from "@/lib/auth";
-import { dataDir } from "@/lib/db";
+import { dataDir } from "@/lib/uploads";
 
 const maxSize = 2 * 1024 * 1024;
 

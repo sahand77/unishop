@@ -8,12 +8,12 @@ export default async function Simulator({ params, searchParams }: {
 }) {
   const { id } = await params;
   const { token } = await searchParams;
-  const item = order(id);
+  const item = await order(id);
   if (!item || item.mode !== "simulator" || item.secret !== token || !item.authority) notFound();
   if (item.status !== "pending" && item.status !== "review") redirect(receiptPath(item));
   async function submit(data: FormData) {
     "use server";
-    const current = order(id);
+    const current = await order(id);
     if (!current || current.mode !== "simulator" || current.secret !== token || !current.authority) notFound();
     const status = data.get("status");
     if (status !== "OK" && status !== "NOK" && status !== "timeout") notFound();

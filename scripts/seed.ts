@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { categories, product, saveCategory, saveProduct } from "../lib/catalog";
+import { categories, saveCategory, saveProduct } from "../lib/catalog";
 import { rules, saveRule } from "../lib/shipping";
 import type { Offer } from "../lib/shared";
-import { db } from "../lib/db";
+import { closeDb } from "../lib/db";
 
 const catalog = [
   { id: "demo-headphones", title: "هدفون بی‌سیم استودیو", category: "دیجیتال", image: "headphones", price: 2890000, weight: 320,
@@ -15,29 +15,28 @@ const catalog = [
     description: "کوله‌پشتی سبک و جادار با بندهای قابل تنظیم، مناسب وسایل روزانه و رفت‌وآمد شهری." },
 ];
 
-for (const name of new Set(catalog.map((item) => item.category))) {
-  if (!categories().some((item) => item.name === name)) saveCategory("",name);
+async function main() {
+  for (const name of new Set(catalog.map((item) => item.category))) {
+    if (!(await categories()).some((item) => item.name === name)) await saveCategory("",name);
+  }
+  for (const entry of [...catalog].reverse()) {
+    const variable = entry.image === "shoes";
+    const attributes = variable ? [
+      { id: "color", name: "رنگ", values: [{ id: "red", name: "قرمز" }] },
+      { id: "size", name: "سایز", values: ["40","41","42"].map((id) => ({ id, name: id })) },
+    ] : [];
+    const offers: Omit<Offer,"reserved">[] = (variable ? ["40","41","42"] : ["one"]).map<Omit<Offer,"reserved">>((size,index) => ({
+      id: randomUUID(), options: Object.fromEntries(variable ? [["color","red"],["size",size]] : []),
+      price: entry.price + (variable && index === 2 ? 150000 : 0), stock: variable && index === 0 ? 0 : 12,
+      weight: entry.weight, sku: `${entry.image}-${size}`, image: "", active: true,
+    }));
+    await saveProduct({ ...entry, categoryId: (await categories()).find((item) => item.name === entry.category)?.id,
+      status: "published", kind: variable ? "variable" : "simple", attributes, offers, image: `/demo/${entry.image}.jpg` },true);
+  }
+  if (!(await rules()).length) {
+    await saveRule({ id: "", name: "ارسال عادی", priority: 100, fee: 95000, provinces: [], categories: [],
+      minQuantity: null,maxQuantity: null,minWeight: null,maxWeight: null,minSubtotal: null,maxSubtotal: null });
+  }
+  console.log("کالاها و قانون ارسال نمونه آماده‌اند.");
 }
-for (const entry of [...catalog].reverse()) {
-  if (product(entry.id)) continue;
-  const variable = entry.image === "shoes";
-  const attributes = variable ? [
-    { id: "color", name: "رنگ", values: [{ id: "red", name: "قرمز" }] },
-    { id: "size", name: "سایز", values: ["40","41","42"].map((id) => ({ id, name: id })) },
-  ] : [];
-  const offers: Omit<Offer,"reserved">[] = (variable ? ["40","41","42"] : ["one"]).map<Omit<Offer,"reserved">>((size,index) => ({
-    id: randomUUID(), options: Object.fromEntries(variable ? [["color","red"],["size",size]] : []),
-    price: entry.price + (variable && index === 2 ? 150000 : 0), stock: variable && index === 0 ? 0 : 12,
-    weight: entry.weight, sku: `${entry.image}-${size}`, image: "", active: true,
-  }));
-  // Give demo entries stable IDs so rerunning the seed preserves edits.
-  db().prepare("INSERT OR IGNORE INTO products VALUES (?,?,?,NULL,?,?,?, '[]',?)")
-    .run(entry.id,entry.title,entry.description,"simple","draft","",Date.now());
-  saveProduct({ ...entry, categoryId: categories().find((item) => item.name === entry.category)?.id,
-    status: "published", kind: variable ? "variable" : "simple", attributes, offers, image: `/demo/${entry.image}.jpg` });
-}
-if (!rules().length) {
-  saveRule({ id: "", name: "ارسال عادی", priority: 100, fee: 95000, provinces: [], categories: [],
-    minQuantity: null,maxQuantity: null,minWeight: null,maxWeight: null,minSubtotal: null,maxSubtotal: null });
-}
-console.log("کالاها و قانون ارسال نمونه آماده‌اند.");
+main().catch((error: Error) => { console.error(error.message); process.exitCode = 1; }).finally(closeDb);

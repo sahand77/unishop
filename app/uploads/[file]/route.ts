@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { dataDir } from "@/lib/db";
+import { dataDir } from "@/lib/uploads";
 
 export async function GET(_request: Request, context: { params: Promise<{ file: string }> }) {
   const { file } = await context.params;

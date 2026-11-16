@@ -5,7 +5,7 @@ import { requireAdmin } from "@/lib/auth";
 
 export default async function Orders() {
   await requireAdmin();
-  const list = orders();
+  const list = await orders();
   return <div className="flow"><h1>سفارش‌ها</h1><div className="panel table-wrap">
     {list.length ? <table><thead><tr><th>شماره</th><th>گیرنده</th><th>مبلغ</th><th>وضعیت</th><th>عملیات</th></tr></thead>
       <tbody>{list.map((item) => <tr key={item.id}><td><bdi>{item.id.slice(0,8)}</bdi></td><td>{item.customer.name}</td>
