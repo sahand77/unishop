@@ -1,0 +1,59 @@
+"use client";
+import { useState, useTransition } from "react";
+import { Save, Trash2 } from "lucide-react";
+import { putRule, removeRule } from "@/app/actions";
+import { fa, provinces, type Category, type ShippingRule } from "@/lib/shared";
+
+const blank: ShippingRule = { id:"",name:"",priority:100,fee:0,provinces:[],categories:[],
+  minQuantity:null,maxQuantity:null,minWeight:null,maxWeight:null,minSubtotal:null,maxSubtotal:null };
+
+export function RuleForm({ rule,categories }: { rule?: ShippingRule; categories: Category[] }) {
+  const [value,setValue] = useState(rule || blank);
+  const [feedback,setFeedback] = useState<{ error?: string; success?: string }>({});
+  const [pending,start] = useTransition();
+  const bound = (name: "minQuantity" | "maxQuantity" | "minWeight" | "maxWeight" | "minSubtotal" | "maxSubtotal", label: string) =>
+    <label>{label}<input type="number" min={0} max={1000000000} value={value[name] ?? ""} placeholder="بدون محدودیت"
+      onChange={(event) => setValue({ ...value,[name]:event.target.value === "" ? null : Number(event.target.value) })}/></label>;
+  function toggle(key: "categories" | "provinces", member: string) {
+    setValue({ ...value,[key]:value[key].includes(member) ? value[key].filter((item) => item !== member) : [...value[key],member] });
+  }
+  function submit(event: React.FormEvent) {
+    event.preventDefault(); setFeedback({});
+    start(async () => {
+      try {
+        const result = await putRule(value);
+        if (result.error) { setFeedback({ error:result.error }); return; }
+        if (!rule) setValue(blank);
+        setFeedback({ success:"قانون ارسال ذخیره شد." });
+      } catch { setFeedback({ error:"ارتباط با فروشگاه برقرار نشد." }); }
+    });
+  }
+  return <form className="flow" onSubmit={submit}><fieldset disabled={pending} className="flow">
+    <div className="form-grid">
+      <label>نام قانون<input required maxLength={80} value={value.name} onChange={(event) => setValue({ ...value,name:event.target.value })}/></label>
+      <label>اولویت<input type="number" min={0} required value={value.priority} onChange={(event) => setValue({ ...value,priority:Number(event.target.value) })}/></label>
+      <label>هزینهٔ ارسال به تومان<input type="number" min={0} max={1000000000} required value={value.fee} onChange={(event) => setValue({ ...value,fee:Number(event.target.value) })}/></label>
+    </div>
+    <p className="muted">عدد کمتر زودتر بررسی می‌شود. گزینه‌های خالی یعنی بدون محدودیت.</p>
+    <details className="variant"><summary>استان‌ها {value.provinces.length > 0 && `(${fa(value.provinces.length)})`}</summary>
+      <div className="checks">{provinces.map((province) => <label key={province} className="check">
+        <input type="checkbox" checked={value.provinces.includes(province)} onChange={() => toggle("provinces",province)}/>{province}</label>)}</div>
+    </details>
+    <details className="variant"><summary>دسته‌بندی‌ها {value.categories.length > 0 && `(${fa(value.categories.length)})`}</summary>
+      {categories.length ? <div className="checks">{categories.map((item) => <label key={item.id} className="check">
+        <input type="checkbox" checked={value.categories.includes(item.id)} onChange={() => toggle("categories",item.id)}/>{item.name}</label>)}</div>
+        : <p className="muted">ابتدا دسته‌بندی ایجاد کنید.</p>}
+    </details>
+    <details className="variant"><summary>بازهٔ تعداد، وزن و مبلغ</summary><div className="form-grid">
+      {bound("minQuantity","کمترین تعداد")}{bound("maxQuantity","بیشترین تعداد")}
+      {bound("minWeight","کمترین وزن به گرم")}{bound("maxWeight","بیشترین وزن به گرم")}
+      {bound("minSubtotal","کمترین مبلغ به تومان")}{bound("maxSubtotal","بیشترین مبلغ به تومان")}
+    </div></details>
+    {feedback.error && <p className="notice error" role="alert">{feedback.error}</p>}
+    {feedback.success && <p className="notice" role="status">{feedback.success}</p>}
+    <div className="editor-buttons"><button className="button primary"><Save size={16}/> ذخیرهٔ قانون</button>
+      {rule && <button className="button danger" type="button" onClick={() => {
+        if (window.confirm("این قانون ارسال حذف شود؟")) start(async () => { await removeRule(rule.id); });
+      }}><Trash2 size={16}/> حذف قانون</button>}</div>
+  </fieldset></form>;
+}
