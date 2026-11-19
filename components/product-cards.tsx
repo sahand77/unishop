@@ -11,7 +11,7 @@ export function ProductCards({ items, groups }: { items: Product[]; groups: Cate
     const low = Math.min(...prices);
     const high = Math.max(...prices);
     return <Link className="product-card" key={item.id} href={`/products/${item.id}`}>
-      <div className="card-image"><ProductImage src={item.image || offers.find((offer) => offer.image)?.image || ""} title=""/>
+      <div className="card-image"><ProductImage src={item.image || offers.find((offer) => offer.image && !item.gallery.some(entry => entry.kind === "video" && entry.url === offer.image))?.image || ""} title=""/>
         {!available && <span className="product-chip">ناموجود</span>}</div>
       <div className="card-content"><span>{groups.find((group) => group.id === item.categoryId)?.name ?? "کالا"}</span>
         <h3>{item.title}</h3><div className="card-bottom"><strong>{prices.length ? `${low !== high ? "از " : ""}${money(low)}` : "ناموجود"}</strong>

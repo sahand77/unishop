@@ -35,7 +35,7 @@ export function ProductDetail({ product, category }: { product: Product; categor
   if (product.image) media.set(product.image,{ kind:"image",url:product.image });
   for (const item of product.gallery) media.set(item.url,item);
   for (const offer of active) {
-    if (offer.image) media.set(offer.image,{ kind:"image",url:offer.image });
+    if (offer.image && !media.has(offer.image)) media.set(offer.image,{ kind:"image",url:offer.image });
   }
   const gallery = [...media.values()];
   const displayed = media.get(photo || current?.image || "") ?? gallery[0];
@@ -52,7 +52,7 @@ export function ProductDetail({ product, category }: { product: Product; categor
       const variant = product.attributes.map((attribute) =>
         attribute.values.find((value) => value.id === current.options[attribute.id])?.name).join(" / ");
       add({ id:current.id,productId:product.id,title:product.title,price:current.price,
-        image:current.image || product.image,variant,quantity:1 },stock);
+        image:media.get(current.image)?.kind === "image" ? current.image : product.image,variant,quantity:1 },stock);
     }
     if (proceed) router.push("/checkout");
     else setFeedback("به سبد خرید اضافه شد.");
@@ -120,14 +120,19 @@ export function ProductDetail({ product, category }: { product: Product; categor
       </div>
       {product.attributes.map((attribute) => <fieldset className="option-field" key={attribute.id}>
         <legend>{attribute.name}</legend><div className="options">
-          {attribute.values.map((value) => <button type="button" key={value.id} aria-pressed={selected[attribute.id] === value.id}
+          {attribute.values.map((value) => {
+            const available = active.some(offer => offer.stock > 0 && offer.options[attribute.id] === value.id &&
+              Object.entries(selected).every(([id,choice]) => id === attribute.id || offer.options[id] === choice));
+            return <button type="button" key={value.id} data-unavailable={!available} title={available ? undefined : "ناموجود"}
+            aria-label={available ? value.name : `${value.name}، ناموجود`} aria-pressed={selected[attribute.id] === value.id}
             onClick={() => { setSelected({ ...selected,[attribute.id]:value.id }); setPhoto(""); setFeedback(""); }}>
             {value.name}
-          </button>)}
+          </button>;
+          })}
         </div>
       </fieldset>)}
       <div className="pdp-price-row" aria-live="polite">
-        <p className={current && stock ? "pdp-stock available" : "pdp-stock"}>{status}</p>
+        <p className="pdp-stock" data-stock={current && stock > 0 ? "available" : complete ? "unavailable" : undefined}>{status}</p>
         <strong className="detail-price">{price}</strong>
       </div>
       <div className="pdp-actions">

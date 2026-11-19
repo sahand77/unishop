@@ -21,7 +21,7 @@ const attributeSchema = z.object({
 const offerSchema = z.object({
   id, options: z.record(id, id), price: integer, expectedStock: integer.optional(),
   stock: integer, weight: integer, sku: z.string().trim().min(1).max(80),
-  image, active: z.boolean(),
+  image: z.union([image,z.string().max(500).regex(videoUrl)]), active: z.boolean(),
 }).refine((offer) => !offer.active || offer.price > 0);
 const productSchema = z.object({
   id: id.optional(), title: z.string().trim().min(1).max(150), description: z.string().trim().max(10000),

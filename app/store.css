@@ -78,7 +78,8 @@
 .pdp-buy .options button { min-height: 42px; min-width: 42px; }
 .pdp-price-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 5px 12px; min-height: 36px; }
 .pdp-stock { color: var(--muted); font-size: .87rem; }
-.pdp-stock.available { color: #1d6450; }
+.pdp-stock[data-stock="available"] { color: #1d6450; }
+.pdp-stock[data-stock="unavailable"] { color: #b42318; font-size: 1.15rem; font-weight: 700; }
 .pdp-price-row .detail-price { margin-inline-start: auto; color: var(--ink); font-size: clamp(1.04rem,2.3vw,1.28rem); }
 .pdp-actions { display: grid; grid-template-columns: minmax(0,1.6fr) minmax(0,1fr); gap: 9px; }
 .pdp-actions .button { width: 100%; min-height: 49px; text-align: center; font-size: .88rem; padding-inline: 8px; }

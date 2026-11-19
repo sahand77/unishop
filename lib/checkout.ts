@@ -47,7 +47,7 @@ export async function quote(input: unknown, destination: unknown, client: PoolCl
   const province = provinceSchema.safeParse(destination);
   if (!lines.success || !province.success) throw new Error("سبد خرید و استان را بررسی کنید.");
   const { rows } = await client.query<QuoteRow>(`SELECT o.id,p.title,o.price,o.weight,
-    coalesce(nullif(o.image,''),p.image) AS image,o.stock-o.reserved AS available,
+    CASE WHEN p.gallery @> jsonb_build_array(jsonb_build_object('kind','video','url',o.image)) THEN p.image ELSE coalesce(nullif(o.image,''),p.image) END AS image,o.stock-o.reserved AS available,
     p.category_id AS category,p.attributes,o.options
     FROM offers o JOIN products p ON p.id=o.product_id
     WHERE o.id=ANY($1::text[]) AND o.active=1 AND o.archived=0 AND p.status='published'`,[lines.data.map((line) => line.id)]);

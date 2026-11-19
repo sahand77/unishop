@@ -4,7 +4,7 @@ import { useActionState, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ImagePlus, Plus, Save, Sparkles, Trash2 } from "lucide-react";
 import { previewBasalam, putCategory, putProduct, signIn } from "@/app/actions";
-import { fa, selectionKey, type Attribute, type Category, type Offer, type Product } from "@/lib/shared";
+import { fa, money, selectionKey, type Attribute, type Category, type Offer, type Product } from "@/lib/shared";
 import type { ProductMedia } from "@/lib/product-media";
 import { MediaEditor, uploadMedia } from "./media-editor";
 import { ProductImage } from "./store-interactions";
@@ -40,7 +40,7 @@ function ImageField({ image,onChange,onBusy,label }: {
     setError(""); setBusy(true); onBusy(true);
     try {
       const result = await uploadMedia(file);
-      if (result.kind !== "image") throw new Error("برای تصویر اصلی یا ترکیب، فایل عکس انتخاب کنید.");
+      if (result.kind !== "image") throw new Error("برای این فیلد یک عکس انتخاب کنید.");
       onChange(result.url);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "بارگذاری تصویر انجام نشد.");
@@ -66,8 +66,8 @@ function newOffer(options: Record<string,string>): Offer {
   return { ...empty,id,options,sku:`US-${id.slice(0,8)}` };
 }
 
-function OfferFields({ item,update,variant,onBusy }: {
-  item: Offer; update: (patch: Partial<Offer>) => void; variant: boolean; onBusy: (busy: boolean) => void;
+function OfferFields({ item,update,media }: {
+  item: Offer; update: (patch: Partial<Offer>) => void; media?: ProductMedia[];
 }) {
   const fields = [
     ["price","قیمت به تومان",item.active ? 1 : 0], ["stock","موجودی کل",item.reserved], ["weight","وزن به گرم",0],
@@ -80,8 +80,16 @@ function OfferFields({ item,update,variant,onBusy }: {
       </label>)}
       <label>کد کالا<input required maxLength={80} dir="ltr" value={item.sku} onChange={(event) => update({ sku:event.target.value })}/></label>
     </div>
-    {variant && <><label className="check"><input type="checkbox" checked={item.active} onChange={(event) => update({ active:event.target.checked })}/> فعال و قابل نمایش</label>
-      <ImageField image={item.image} label="تصویر ترکیب" onBusy={onBusy} onChange={(image) => update({image})}/></>}
+    {media && <><label className="check"><input type="checkbox" checked={item.active} onChange={(event) => update({ active:event.target.checked })}/> فعال و قابل نمایش</label>
+      <fieldset className="option-field"><legend>عکس یا ویدئوی ترکیب</legend>
+        <div className="options variant-photos">
+          <button type="button" aria-pressed={!item.image} onClick={() => update({image:""})}>پیش‌فرض کالا</button>
+          {(item.image && !media.some(entry => entry.url === item.image) ? [...media,{kind:"image",url:item.image}] : media).map(({url,kind},index) =>
+            <button key={url} type="button" aria-pressed={item.image === url} onClick={() => update({image:url})}>
+              {kind === "video" ? <span>▶ ویدئو {fa(index + 1)}</span> : <img src={url} loading="lazy" alt={`عکس ${fa(index + 1)}`}/>}
+            </button>)}
+        </div>
+      </fieldset></>}
   </div>;
 }
 
@@ -208,13 +216,18 @@ export function ProductForm({ initial,categories }: { initial?: Product; categor
         <label>نوع کالا<select value={kind} onChange={(event) => setKind(event.target.value as Product["kind"])}>
           <option value="simple">کالای ساده</option><option value="variable">کالای متغیر</option></select></label>
       </div>
-      <ImageField label="تصویر اصلی کالا" image={image} onChange={setImage} onBusy={changeBusy}/>
+      <ImageField label="عکس کارت کالا" image={image} onChange={setImage} onBusy={changeBusy}/>
     </fieldset>
     <fieldset className="panel" disabled={pending || busy > 0}>
-      <MediaEditor items={gallery} onChange={setGallery} onBusy={changeBusy}/>
+      <MediaEditor items={gallery} onChange={next => {
+        const removed = gallery.filter(old => !next.some(item => item.url === old.url)).map(item => item.url);
+        if (removed.length) setVariants(before => before.map(item =>
+          item.image !== image && removed.includes(item.image) ? {...item,image:""} : item));
+        setGallery(next);
+      }} onBusy={changeBusy}/>
     </fieldset>
     {kind === "simple" ? <fieldset className="panel flow" disabled={pending || importing}>
-      <h2>قیمت و موجودی</h2><OfferFields item={{ ...simple,active:false }} update={(patch) => setSimple((before) => ({ ...before,...patch }))} variant={false} onBusy={changeBusy}/>
+      <h2>قیمت و موجودی</h2><OfferFields item={{ ...simple,active:false }} update={(patch) => setSimple((before) => ({ ...before,...patch }))}/>
     </fieldset> : <>
       <fieldset className="panel flow" disabled={pending || busy > 0}>
         <h2>ویژگی‌ها</h2>
@@ -244,10 +257,17 @@ export function ProductForm({ initial,categories }: { initial?: Product; categor
           </select></label>)}</div>}
         <button type="button" className="button" onClick={addManual}><Plus size={17}/> افزودن ترکیب دستی</button>
         {variantError && <p className="notice error" role="alert">{variantError}</p>}
-        {variants.map((variant) => <details className="variant flow" key={variant.id}>
-          <summary>{attributes.map((a) => a.values.find((v) => v.id === variant.options[a.id])?.name || "—").join(" / ")}
-            <span className="muted">{variant.active ? "فعال" : "غیرفعال"}</span></summary>
-          <OfferFields item={variant} variant onBusy={changeBusy} update={(patch) =>
+        {variants.map((variant) => <details className="variant flow" key={variant.id} data-unavailable={!variant.active || variant.stock <= variant.reserved}>
+          <summary>
+            {attributes.map(a => `${a.name}: ${a.values.find(v => v.id === variant.options[a.id])?.name || "—"}`).join(" / ")}
+            <span className="muted">{variant.active ? "فعال" : "غیرفعال"}</span>
+            <span className="variant-facts">
+              <span>قیمت <b>{money(variant.price)}</b></span>
+              <span>موجودی کل <b>{fa(variant.stock)}</b></span>
+              {variant.image && (gallery.some(entry => entry.url === variant.image && entry.kind === "video") ? <span>▶ ویدئوی ترکیب</span> : <img src={variant.image} alt="عکس ترکیب" loading="lazy"/>)}
+            </span>
+          </summary>
+          <OfferFields item={variant} media={image && !gallery.some(entry => entry.url === image) ? [{kind:"image",url:image},...gallery] : gallery} update={(patch) =>
             setVariants((before) => before.map((item) => item.id === variant.id ? { ...item,...patch } : item))}/>
           <button type="button" className="button danger" onClick={() => setVariants((before) => before.filter((item) => item.id !== variant.id))}>
             <Trash2 size={16}/> حذف ترکیب</button>
