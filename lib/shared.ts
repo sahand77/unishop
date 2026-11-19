@@ -7,7 +7,9 @@ export const provinces = [
 ] as const;
 
 export const fa = (value: number) => new Intl.NumberFormat("fa-IR").format(value);
-export const money = (value: number) => `${fa(value)} تومان`;
+const tomanFormat = new Intl.NumberFormat("fa-IR", { useGrouping: true, maximumFractionDigits: 0 });
+export const toman = (value: number) => tomanFormat.format(value);
+export const money = (value: number) => `${toman(value)} تومان`;
 export const selectionKey = (options: Record<string, string>) =>
   JSON.stringify(Object.entries(options).sort(([a], [b]) => a.localeCompare(b, "en")));
 export const paymentLabels = {

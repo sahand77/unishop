@@ -1,4 +1,5 @@
 "use client";
+import { AmountInput } from "./amount-input";
 import { useActionState, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ImagePlus, Plus, Save, Sparkles, Trash2 } from "lucide-react";
@@ -74,7 +75,7 @@ function OfferFields({ item,update,variant,onBusy }: {
   return <div className="flow">
     <div className="form-grid">
       {fields.map(([key,label,min]) => <label key={key}>{label}
-        <input type="number" required min={min} max={1000000000} value={item[key]} onChange={(event) => update({ [key]:Number(event.target.value) })}/>
+        {key === "price" ? <AmountInput required min={min} value={item.price} onChange={price => update({price: price ?? 0})}/> : <input type="number" required min={min} max={1000000000} value={item[key]} onChange={(event) => update({ [key]:Number(event.target.value) })}/>}
         {key === "stock" && item.reserved > 0 && <small>{fa(item.reserved)} عدد رزرو شده</small>}
       </label>)}
       <label>کد کالا<input required maxLength={80} dir="ltr" value={item.sku} onChange={(event) => update({ sku:event.target.value })}/></label>

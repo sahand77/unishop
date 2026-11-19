@@ -1,4 +1,5 @@
 "use client";
+import { AmountInput } from "./amount-input";
 import { useState, useTransition } from "react";
 import { Save, Trash2 } from "lucide-react";
 import { putRule, removeRule } from "@/app/actions";
@@ -12,8 +13,8 @@ export function RuleForm({ rule,categories }: { rule?: ShippingRule; categories:
   const [feedback,setFeedback] = useState<{ error?: string; success?: string }>({});
   const [pending,start] = useTransition();
   const bound = (name: "minQuantity" | "maxQuantity" | "minWeight" | "maxWeight" | "minSubtotal" | "maxSubtotal", label: string) =>
-    <label>{label}<input type="number" min={0} max={1000000000} value={value[name] ?? ""} placeholder="بدون محدودیت"
-      onChange={(event) => setValue({ ...value,[name]:event.target.value === "" ? null : Number(event.target.value) })}/></label>;
+    <label>{label}{name === "minSubtotal" || name === "maxSubtotal" ? <AmountInput value={value[name]} placeholder="بدون محدودیت" onChange={amount => setValue({...value, [name]: amount})}/> : <input type="number" min={0} max={1000000000} value={value[name] ?? ""} placeholder="بدون محدودیت"
+      onChange={(event) => setValue({ ...value,[name]:event.target.value === "" ? null : Number(event.target.value) })}/>}</label>;
   function toggle(key: "categories" | "provinces", member: string) {
     setValue({ ...value,[key]:value[key].includes(member) ? value[key].filter((item) => item !== member) : [...value[key],member] });
   }
@@ -32,7 +33,7 @@ export function RuleForm({ rule,categories }: { rule?: ShippingRule; categories:
     <div className="form-grid">
       <label>نام قانون<input required maxLength={80} value={value.name} onChange={(event) => setValue({ ...value,name:event.target.value })}/></label>
       <label>اولویت<input type="number" min={0} required value={value.priority} onChange={(event) => setValue({ ...value,priority:Number(event.target.value) })}/></label>
-      <label>هزینهٔ ارسال به تومان<input type="number" min={0} max={1000000000} required value={value.fee} onChange={(event) => setValue({ ...value,fee:Number(event.target.value) })}/></label>
+      <label>هزینهٔ ارسال به تومان<AmountInput required value={value.fee} onChange={fee => setValue({...value, fee: fee ?? 0})}/></label>
     </div>
     <p className="muted">عدد کمتر زودتر بررسی می‌شود. گزینه‌های خالی یعنی بدون محدودیت.</p>
     <details className="variant"><summary>استان‌ها {value.provinces.length > 0 && `(${fa(value.provinces.length)})`}</summary>
