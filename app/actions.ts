@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { basalamDraft, basalamId } from "@/lib/basalam";
 import { currentCustomer } from "@/lib/customer-auth";
 import { login, logout, requireAdmin } from "@/lib/auth";
 import { saveCategory, saveProduct } from "@/lib/catalog";
@@ -38,6 +39,21 @@ export async function putCategory(_previous: string, form: FormData) {
   }
   revalidatePath("/", "layout");
   return "دسته ذخیره شد.";
+}
+
+export async function previewBasalam(link: string) {
+  await requireAdmin();
+  const id = basalamId(link);
+  if (!id) return { error:"لینک صفحهٔ کالای باسلام را وارد کنید." };
+  try {
+    const response = await fetch(`https://core.basalam.com/v3/products/${id}`, {
+      cache:"no-store", redirect:"error", signal:AbortSignal.timeout(15000)
+    });
+    if (!response.ok) return { error:"دریافت کالا از باسلام انجام نشد. لینک را بررسی کنید." };
+    return { draft:basalamDraft(await response.json()) };
+  } catch {
+    return { error:"اطلاعات کالا از باسلام دریافت نشد. دوباره تلاش کنید." };
+  }
 }
 
 export async function putProduct(input: unknown) {

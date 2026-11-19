@@ -2,16 +2,16 @@ import type { PoolClient } from "pg";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { db, transaction } from "./db";
-import { galleryLimit } from "./product-media";
+import { basalamMediaUrl, galleryLimit } from "./product-media";
 import { selectionKey, type Category, type Offer, type Product } from "./shared";
 
 const id = z.string().regex(/^[A-Za-z0-9-]{1,80}$/);
 const imageUrl = /^\/(uploads|demo)\/[a-z0-9-]+\.(jpg|jpeg|png|webp)$/i;
 const videoUrl = /^\/(uploads|demo)\/[a-z0-9-]+\.(mp4|webm)$/i;
-const image = z.string().max(500).refine((value) => !value || imageUrl.test(value));
+const image = z.string().max(500).refine((value) => !value || imageUrl.test(value) || basalamMediaUrl(value));
 const gallery = z.array(z.discriminatedUnion("kind",[
-  z.object({ kind:z.literal("image"),url:z.string().max(500).regex(imageUrl) }),
-  z.object({ kind:z.literal("video"),url:z.string().max(500).regex(videoUrl) }),
+  z.object({ kind:z.literal("image"),url:z.string().max(500).refine(value => imageUrl.test(value) || basalamMediaUrl(value)) }),
+  z.object({ kind:z.literal("video"),url:z.string().max(500).refine(value => videoUrl.test(value) || basalamMediaUrl(value)) }),
 ])).max(galleryLimit).refine((items) => new Set(items.map((item) => item.url)).size === items.length);
 export const integer = z.number().int().min(0).max(1_000_000_000);
 const attributeSchema = z.object({

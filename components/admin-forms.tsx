@@ -3,7 +3,7 @@ import { AmountInput } from "./amount-input";
 import { useActionState, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ImagePlus, Plus, Save, Sparkles, Trash2 } from "lucide-react";
-import { putCategory, putProduct, signIn } from "@/app/actions";
+import { previewBasalam, putCategory, putProduct, signIn } from "@/app/actions";
 import { fa, selectionKey, type Attribute, type Category, type Offer, type Product } from "@/lib/shared";
 import type { ProductMedia } from "@/lib/product-media";
 import { MediaEditor, uploadMedia } from "./media-editor";
@@ -104,6 +104,32 @@ export function ProductForm({ initial,categories }: { initial?: Product; categor
   const [feedback,setFeedback] = useState<{ error?: string; success?: string }>({});
   const [busy,setBusy] = useState(0);
   const [pending,start] = useTransition();
+  const [link,setLink] = useState("");
+  const [importing,setImporting] = useState(false);
+  const [importMessage,setImportMessage] = useState("");
+  async function importProduct(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (pending || busy || importing) return;
+    setImporting(true);
+    setImportMessage("");
+    changeBusy(true);
+    try {
+      const result = await previewBasalam(link.trim());
+      if (!result.draft) { setImportMessage(result.error); return; }
+      const draft = result.draft;
+      setTitle(draft.title); setDescription(draft.description);
+      setImage(draft.image); setGallery(draft.gallery);
+      setCategory(categories.find(item => item.name === draft.category)?.id ?? "");
+      setSimple(draft.simple); setVariants(draft.variants); setAttributes(draft.attributes);
+      setKind(draft.variants.length && draft.attributes.length ? "variable" : "simple");
+      setAttributeName(""); setSelection({}); setVariantError(""); setFeedback({});
+      setImportMessage("اطلاعات آمادهٔ ویرایش است." + (draft.omitted ? ` به‌دلیل محدودیت گالری، ${fa(draft.omitted)} فایل اضافه نشد.` : ""));
+    } catch {
+      setImportMessage("ارتباط با فروشگاه برقرار نشد.");
+    } finally {
+      setImporting(false); changeBusy(false);
+    }
+  }
   const changeBusy = (value: boolean) => setBusy((count) => count+(value ? 1 : -1));
   const changeAttribute = (id: string, change: (item: Attribute) => Attribute) =>
     setAttributes((before) => before.map((item) => item.id === id ? change(item) : item));
@@ -166,7 +192,13 @@ export function ProductForm({ initial,categories }: { initial?: Product; categor
     });
   }
 
-  return <form onSubmit={submit} className="flow editor">
+  return <div className="flow">
+    {!id && <form className="panel flow" onSubmit={importProduct}>
+      <label>لینک کالای باسلام<input type="url" required dir="ltr" value={link} onChange={event => setLink(event.target.value)} disabled={pending || busy > 0}/></label>
+      <button className="button" disabled={pending || busy > 0}>{importing ? "در حال دریافت…" : "پر کردن فرم از باسلام"}</button>
+      {importMessage && <p role="status">{importMessage}</p>}
+    </form>}
+    <form onSubmit={submit} className="flow editor">
     <fieldset className="panel flow" disabled={pending || busy > 0}>
       <h2>اطلاعات کالا</h2>
       <label>عنوان کالا<input required maxLength={150} value={title} onChange={(event) => setTitle(event.target.value)}/></label>
@@ -181,7 +213,7 @@ export function ProductForm({ initial,categories }: { initial?: Product; categor
     <fieldset className="panel" disabled={pending || busy > 0}>
       <MediaEditor items={gallery} onChange={setGallery} onBusy={changeBusy}/>
     </fieldset>
-    {kind === "simple" ? <fieldset className="panel flow" disabled={pending}>
+    {kind === "simple" ? <fieldset className="panel flow" disabled={pending || importing}>
       <h2>قیمت و موجودی</h2><OfferFields item={{ ...simple,active:false }} update={(patch) => setSimple((before) => ({ ...before,...patch }))} variant={false} onBusy={changeBusy}/>
     </fieldset> : <>
       <fieldset className="panel flow" disabled={pending || busy > 0}>
@@ -226,7 +258,7 @@ export function ProductForm({ initial,categories }: { initial?: Product; categor
     {feedback.success && <p className="notice" role="status">{feedback.success}</p>}
     <div className="editor-buttons"><button type="submit" className="button" value="draft" disabled={pending || busy > 0}>ذخیرهٔ پیش‌نویس</button>
       <button type="submit" className="button primary" value="published" disabled={pending || busy > 0}><Save size={17}/> انتشار کالا</button></div>
-  </form>;
+  </form></div>;
 }
 
 function AttributeEditor({ attribute,locked,rename,renameValue,add,remove,dropValue }: {
