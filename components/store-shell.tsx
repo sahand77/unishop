@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Box, Settings2, ShoppingBag } from "lucide-react";
 import type { Category } from "@/lib/shared";
 import { CartLink, StoreCategories, StoreSearch } from "./store-interactions";
+import { currentCustomer } from "@/lib/customer-auth";
 
 export function Brand() {
   return <Link href="/" className="brand" aria-label="یونی‌شاپ، صفحهٔ اصلی">
@@ -9,12 +10,14 @@ export function Brand() {
   </Link>;
 }
 
-export function StoreHeader({ groups }: { groups: Category[] }) {
+export async function StoreHeader({ groups }: { groups: Category[] }) {
+  const customer = await currentCustomer();
   return <header className="store-header"><div className="wrap header-inner">
     <Brand/>
     <StoreCategories groups={groups}/>
     <StoreSearch/>
     <CartLink/>
+    <Link href={customer ? "/account" : "/login"}>{customer ? "حساب کاربری" : "ورود / ثبت‌نام"}</Link>
   </div></header>;
 }
 

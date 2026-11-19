@@ -43,5 +43,18 @@ export async function migrate() {
       ALTER TABLE products ADD COLUMN gallery JSONB NOT NULL DEFAULT '[]'::jsonb;
       INSERT INTO schema_migrations VALUES (2);
     `);
+    if (!versions.has(3)) await client.query(`
+      CREATE TABLE customers (id TEXT PRIMARY KEY, mobile TEXT UNIQUE NOT NULL);
+      CREATE TABLE customer_sessions (token TEXT PRIMARY KEY, customer_id TEXT NOT NULL REFERENCES customers(id), expires BIGINT NOT NULL, mode TEXT NOT NULL);
+      CREATE TABLE login_codes (id TEXT PRIMARY KEY, mobile TEXT NOT NULL, hash TEXT NOT NULL, expires BIGINT NOT NULL, created BIGINT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, used BOOLEAN NOT NULL DEFAULT false, ready BOOLEAN NOT NULL DEFAULT false, mode TEXT NOT NULL);
+      CREATE INDEX login_codes_mobile_created ON login_codes(mobile, created);
+      CREATE INDEX login_codes_created ON login_codes(created);
+      INSERT INTO schema_migrations VALUES (3);
+    `);
+    if (!versions.has(4)) await client.query(`
+      ALTER TABLE customer_sessions DROP COLUMN mode;
+      ALTER TABLE login_codes DROP COLUMN mode;
+      INSERT INTO schema_migrations VALUES (4);
+    `);
   });
 }
