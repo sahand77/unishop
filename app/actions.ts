@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { basalamDraft, basalamId } from "@/lib/basalam";
+import { basalamDraft, basalamId, productReels } from "@/lib/basalam";
 import { currentCustomer } from "@/lib/customer-auth";
 import { login, logout, requireAdmin } from "@/lib/auth";
 import { saveCategory, saveProduct } from "@/lib/catalog";
@@ -50,7 +50,12 @@ export async function previewBasalam(link: string) {
       cache:"no-store", redirect:"error", signal:AbortSignal.timeout(15000)
     });
     if (!response.ok) return { error:"دریافت کالا از باسلام انجام نشد. لینک را بررسی کنید." };
-    return { draft:basalamDraft(await response.json()) };
+    const product = await response.json();
+    const page = await fetch(new URL(new URL(link).pathname, "https://basalam.com"), {
+      cache:"no-store", redirect:"error", signal:AbortSignal.timeout(15000)
+    });
+    if (!page.ok) return { error:"دریافت گالری کالا از باسلام انجام نشد. دوباره تلاش کنید." };
+    return { draft:basalamDraft(product, productReels(await page.text(), id)) };
   } catch {
     return { error:"اطلاعات کالا از باسلام دریافت نشد. دوباره تلاش کنید." };
   }

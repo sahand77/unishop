@@ -30,6 +30,8 @@ export function ProductDetail({ product, category }: { product: Product; categor
   const canBuy = ready && !!current && stock > 0 && (canAdd || (inCart > 0 && inCart <= stock));
 
   const media = new Map<string,ProductMedia>();
+  const first = product.gallery[0];
+  if (first?.kind === "video") media.set(first.url,first);
   if (product.image) media.set(product.image,{ kind:"image",url:product.image });
   for (const item of product.gallery) media.set(item.url,item);
   for (const offer of active) {

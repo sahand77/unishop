@@ -22,7 +22,20 @@ export function basalamId(link: string) {
   return /^\/[^/]+\/product\/(\d+)\/?$/.exec(url.pathname)?.[1];
 }
 
-export function basalamDraft(raw: unknown) {
+export function productReels(html: string, id: string): string[] {
+  const payload = /<script\b[^>]*\bid="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/.exec(html)?.[1];
+  if (!payload) return [];
+  const queries = JSON.parse(payload)?.props?.pageProps?.dehydratedState?.queries;
+  if (!Array.isArray(queries)) return [];
+  const query = queries.find(({ queryKey }) => Array.isArray(queryKey) &&
+    queryKey[0] === "reels" && queryKey[1] === "product-reels" && String(queryKey[2]) === id);
+  const pages = z.array(z.object({
+    reels:z.array(z.object({ video:z.object({ url:z.string().nullish() }).nullish() }))
+  })).safeParse(query?.state?.data?.pages);
+  return pages.success ? pages.data.flatMap(page => page.reels.map(reel => reel.video?.url)).filter(basalamMediaUrl) : [];
+}
+
+export function basalamDraft(raw: unknown, reels: string[] = []) {
   const p = source.parse(raw);
   const image = basalamMediaUrl(p.photo?.original) ? p.photo!.original! : "";
   const gallery: ProductMedia[] = [];
@@ -33,6 +46,7 @@ export function basalamDraft(raw: unknown) {
       seen.add(url);
     }
   }
+  for (const reel of reels) add("video",reel);
   const video = z.object({ original:z.string().nullish(), url:z.string().nullish() }).safeParse(p.video);
   add("video",video.success ? video.data.original || video.data.url : p.video);
   for (const item of p.photos ?? []) add("image",item.original);
