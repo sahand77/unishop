@@ -4,7 +4,8 @@ import { after, before, test } from "node:test";
 import { categories, product, saveCategory, saveProduct } from "../lib/catalog";
 import { order, quote, reserveOrder } from "../lib/checkout";
 import { Pool } from "pg";
-import { closeDb } from "../lib/db";
+import { addresses, customerOrders } from "../lib/profile";
+import { db, closeDb } from "../lib/db";
 import { migrate } from "../lib/migrations";
 import { initiate, recheck, verify } from "../lib/payment";
 import { rules, saveRule } from "../lib/shipping";
@@ -166,4 +167,19 @@ test("قطع ارتباط درگاه و آزاد کردن موجودی پس از
   assert.equal((await verify((await order(reserved.id))!,"NOK")).status,"canceled");
   assert.equal((await product(a.id))!.offers[0].reserved,0);
   assert.equal((await product(a.id))!.offers[0].stock,1);
+});
+
+test("سفارش و آدرس فقط برای حساب مالک نمایش داده می‌شوند", async () => {
+  const buyer = randomUUID(), recipient = randomUUID();
+  await db().query("INSERT INTO customers(id,mobile) VALUES ($1,$2),($3,$4)", [buyer,"09122222222",recipient,customer.mobile]);
+  await db().query("INSERT INTO customer_addresses(id,customer_id,recipient) VALUES ($1,$2,$3)", [randomUUID(),buyer,customer]);
+  const { lines } = await inventory(2);
+  const input = { lines, customer, shown: await quote(lines,customer.province), attempt: randomUUID(), mode: "sandbox" as const };
+  const placed = await reserveOrder({ ...input, customerId: buyer });
+  await reserveOrder({ ...input, attempt: randomUUID() });
+  assert.deepEqual((await customerOrders(buyer)).map(o => o.id), [placed.order!.id]);
+  assert.deepEqual(await customerOrders(recipient), []);
+  assert.deepEqual((await addresses(buyer))[0].recipient, customer);
+  assert.deepEqual(await addresses(recipient), []);
+  await assert.rejects(() => reserveOrder({ ...input, customerId: recipient }));
 });

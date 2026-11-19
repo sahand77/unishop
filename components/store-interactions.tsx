@@ -1,4 +1,5 @@
 "use client";
+import { validateRecipient } from "./validate-recipient";
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -73,7 +74,8 @@ const emptyCustomer = { name:"",mobile:"",province:"",city:"",address:"",postalC
 const digits = (value: string) => value.replace(/[۰-۹]/g,(char) => String(char.charCodeAt(0)-1776))
   .replace(/[٠-٩]/g,(char) => String(char.charCodeAt(0)-1632));
 
-export function CheckoutScreen() {
+export function CheckoutScreen({ saved }: { saved: import("@/lib/profile").SavedAddress[] }) {
+  const [selected, setSelected] = useState("");
   const { items, ready } = useCart();
   const [customer,setCustomer] = useState(emptyCustomer);
   const [pricing,setPricing] = useState<Quote>();
@@ -86,6 +88,7 @@ export function CheckoutScreen() {
   if (!ready) return <p>در حال بارگذاری سبد خرید…</p>;
   if (!items.length) return <EmptyBasket/>;
   function field(name: keyof typeof customer, value: string) {
+    setSelected("");
     setCustomer({ ...customer,[name]:value });
     if (name === "province") { setPricing(undefined); setNotice(""); setError(""); }
   }
@@ -99,8 +102,9 @@ export function CheckoutScreen() {
       } catch { setError("ارتباط با فروشگاه برقرار نشد. دوباره تلاش کنید."); }
     });
   }
-  function submit(event: React.FormEvent) {
+  function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!validateRecipient(event)) return;
     if (!pricing) { calculate(); return; }
     setError(""); setNotice("");
     const key = attempt || crypto.randomUUID();
@@ -115,18 +119,24 @@ export function CheckoutScreen() {
       } catch { setError("ارتباط با فروشگاه برقرار نشد. دوباره تلاش کنید."); }
     });
   }
-  return <form onSubmit={submit} className="split">
+  return <form noValidate onSubmit={submit} className="split">
     <fieldset className="panel flow checkout-fields" disabled={pending}>
       <h2>اطلاعات گیرنده</h2>
+      {saved.length > 0 && <label>آدرس ذخیره‌شده<select value={selected} onChange={event => {
+        const id = event.target.value;
+        setSelected(id);
+        setCustomer(saved.find(a => a.id === id)?.recipient || emptyCustomer);
+        setPricing(undefined); setAttempt(""); setError(""); setNotice("");
+      }}><option value="">ورود دستی</option>{saved.map(a => <option key={a.id} value={a.id}>{a.recipient.name} · {a.recipient.city}، {a.recipient.address}</option>)}</select></label>}
       <div className="form-grid">
-        <label>نام و نام خانوادگی<input required autoComplete="name" minLength={2} value={customer.name} onChange={(event) => field("name",event.target.value)}/></label>
-        <label>شمارهٔ موبایل<input required inputMode="numeric" autoComplete="tel" dir="ltr" value={customer.mobile} onChange={(event) => field("mobile",digits(event.target.value))}/></label>
-        <label>استان<select required value={customer.province} onChange={(event) => field("province",event.target.value)}>
+        <label><span>نام و نام خانوادگی <span aria-hidden="true">*</span></span><input required name="name" autoComplete="name" minLength={2} value={customer.name} onChange={(event) => field("name",event.target.value)}/></label>
+        <label><span>شمارهٔ موبایل <span aria-hidden="true">*</span></span><input required name="mobile" inputMode="numeric" autoComplete="tel" dir="ltr" value={customer.mobile} onChange={(event) => field("mobile",digits(event.target.value))}/></label>
+        <label><span>استان <span aria-hidden="true">*</span></span><select required name="province" value={customer.province} onChange={(event) => field("province",event.target.value)}>
           <option value="">انتخاب استان</option>{provinces.map((province) => <option key={province}>{province}</option>)}</select></label>
-        <label>شهر<input required autoComplete="address-level2" minLength={2} value={customer.city} onChange={(event) => field("city",event.target.value)}/></label>
-        <label>کد پستی<input required dir="ltr" inputMode="numeric" autoComplete="postal-code" value={customer.postalCode} onChange={(event) => field("postalCode",digits(event.target.value))}/></label>
+        <label><span>شهر <span aria-hidden="true">*</span></span><input required name="city" autoComplete="address-level2" minLength={2} value={customer.city} onChange={(event) => field("city",event.target.value)}/></label>
+        <label><span>کد پستی <span aria-hidden="true">*</span></span><input required name="postalCode" dir="ltr" inputMode="numeric" autoComplete="postal-code" value={customer.postalCode} onChange={(event) => field("postalCode",digits(event.target.value))}/></label>
       </div>
-      <label>نشانی کامل<textarea required autoComplete="street-address" minLength={8} value={customer.address} onChange={(event) => field("address",event.target.value)}/></label>
+      <label><span>نشانی کامل <span aria-hidden="true">*</span></span><textarea required name="address" autoComplete="street-address" minLength={8} value={customer.address} onChange={(event) => field("address",event.target.value)}/></label>
     </fieldset>
     <aside className="panel flow summary"><h2>صورتحساب</h2>
       <p><span>جمع کالاها</span><strong>{money(pricing?.subtotal ?? estimate)}</strong></p>

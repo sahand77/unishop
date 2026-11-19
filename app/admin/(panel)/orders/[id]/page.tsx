@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { updateTracking } from "@/app/profile-actions";
 import { retryPayment } from "@/app/actions";
 import { order } from "@/lib/checkout";
 import { fa,money,paymentLabels } from "@/lib/shared";
@@ -22,6 +23,10 @@ export default async function OrderDetail({ params }: { params: Promise<{ id: st
           <button className="button">بررسی دوبارهٔ پرداخت</button></form>}
       </section>
     </div>
+    {item.status === "paid" && <form className="panel flow" action={updateTracking.bind(null,item.id)}>
+      <label>کد رهگیری مرسوله<input name="tracking" dir="ltr" maxLength={80} defaultValue={item.tracking_code || ""}/></label>
+      <button className="button">ذخیرهٔ وضعیت ارسال</button>
+    </form>}
     <section className="panel flow table-wrap"><h2>اقلام سفارش</h2>
       <table><thead><tr><th>کالا</th><th>ترکیب</th><th>تعداد</th><th>قیمت واحد</th></tr></thead>
         <tbody>{quote.items.map((line) => <tr key={line.id}><td>{line.title}</td><td>{line.variant || "—"}</td>

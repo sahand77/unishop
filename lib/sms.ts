@@ -1,12 +1,4 @@
-export function digits(value: string) {
-  return value.replace(/[۰-۹]/g, c => String(c.charCodeAt(0) - 1776)).replace(/[٠-٩]/g, c => String(c.charCodeAt(0) - 1632));
-}
-
-export function mobileNumber(value: string) {
-  const mobile = digits(value).replace(/[\s()-]/g, "").replace(/^(\+98|0098|98)(?=9)/, "0");
-  if (!/^09\d{9}$/.test(mobile)) throw new Error("شماره موبایل معتبر وارد کنید.");
-  return mobile;
-}
+export { digits, mobileNumber } from "./contact";
 
 export function smsConfig() {
   const apiKey = process.env.SMS_API_KEY;

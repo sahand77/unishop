@@ -6,8 +6,8 @@ const cookieName = "unishop-customer";
 export async function currentCustomer() {
   const token = (await cookies()).get(cookieName)?.value;
   if (!token) return null;
-  const { rows: [customer] } = await db().query<{ mobile: string }>(
-    `SELECT mobile FROM customers JOIN customer_sessions ON customers.id=customer_sessions.customer_id
+  const { rows: [customer] } = await db().query<{ id: string; mobile: string }>(
+    `SELECT customers.id, mobile FROM customers JOIN customer_sessions ON customers.id=customer_sessions.customer_id
     WHERE token=$1 AND expires>$2`, [sessionHash(token), Date.now()]);
   return customer || null;
 }

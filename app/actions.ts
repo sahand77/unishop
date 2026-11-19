@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { currentCustomer } from "@/lib/customer-auth";
 import { login, logout, requireAdmin } from "@/lib/auth";
 import { saveCategory, saveProduct } from "@/lib/catalog";
 import { customerSchema, order, quote, reserveOrder } from "@/lib/checkout";
@@ -90,13 +91,13 @@ export async function checkout(input: {
 }): Promise<CheckoutResult> {
   const customer = customerSchema.safeParse(input.customer);
   const shown = displayed.safeParse(input.shown);
-  if (!customer.success || !shown.success || !z.uuid().safeParse(input.attempt).success) {
-    return { error: "نام، موبایل، شهر، نشانی و کدپستی را بررسی کنید." };
-  }
+  if (!customer.success) return { error: customer.error.issues[0].message };
+  if (!shown.success) return { error: "مبلغ سفارش معتبر نیست. هزینهٔ ارسال را دوباره محاسبه کنید." };
+  if (!z.uuid().safeParse(input.attempt).success) return { error: "شناسهٔ ثبت سفارش معتبر نیست." };
   try {
     const mode = paymentMode();
     validateGateway(mode);
-    const result = await reserveOrder({ lines: input.lines, customer: customer.data, shown: shown.data, attempt: input.attempt, mode });
+    const result = await reserveOrder({ customerId: (await currentCustomer())?.id, lines: input.lines, customer: customer.data, shown: shown.data, attempt: input.attempt, mode });
     if (result.changed) return { changed: result.changed };
     const item = result.fresh ? await initiate(result.order) : result.order;
     return { url: ["pending","review"].includes(item.status) ? gatewayLink(item) : `/orders/${item.id}?token=${item.secret}`, orderId: item.id };

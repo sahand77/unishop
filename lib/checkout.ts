@@ -10,13 +10,9 @@ export const linesSchema = z.array(z.object({
   id: z.string().regex(/^[a-z0-9-]{1,80}$/i), quantity: z.number().int().min(1).max(99),
 })).min(1).max(50).refine((lines) => new Set(lines.map((line) => line.id)).size === lines.length);
 export const provinceSchema = z.enum(provinces);
-export const customerSchema = z.object({
-  name: z.string().trim().min(2).max(100),
-  mobile: z.string().regex(/^09\d{9}$/),
-  province: provinceSchema, city: z.string().trim().min(2).max(100),
-  address: z.string().trim().min(8).max(500), postalCode: z.string().regex(/^\d{10}$/),
-});
-export type Customer = z.infer<typeof customerSchema>;
+export { customerSchema } from "./recipient";
+export type { Customer } from "./recipient";
+import type { Customer } from "./recipient";
 export type Status = keyof typeof paymentLabels;
 export type Mode = "sandbox" | "live" | "simulator";
 type QuoteRow = {
@@ -24,7 +20,7 @@ type QuoteRow = {
   category: string | null; attributes: string; options: string;
 };
 export type Order = {
-  id: string; attempt: string; secret: string; customer: Customer; quote: Quote; amount: number;
+  customer_id: string | null; tracking_code: string | null; id: string; attempt: string; secret: string; customer: Customer; quote: Quote; amount: number;
   authority: string | null; mode: Mode; status: Status;
   reference: string | null; message: string | null; created: number; request_started: number;
 };
@@ -76,10 +72,11 @@ export async function quote(input: unknown, destination: unknown, client: PoolCl
 }
 
 export function reserveOrder(input: {
-  lines: unknown; customer: Customer; attempt: string; shown: Pick<Quote, "subtotal" | "shipping" | "total">; mode: Mode;
+  customerId?: string; lines: unknown; customer: Customer; attempt: string; shown: Pick<Quote, "subtotal" | "shipping" | "total">; mode: Mode;
 }) {
   return transaction(async (client) => {
     const { rows:[existing] } = await client.query<OrderRow>("SELECT * FROM orders WHERE attempt=$1",[input.attempt]);
+    if (existing && existing.customer_id !== (input.customerId ?? null)) throw new Error("لطفاً سفارش را دوباره ثبت کنید.");
     if (existing) return { order: readOrder(existing), fresh: false } as const;
     const pricing = await quote(input.lines, input.customer.province,client);
     if (pricing.total !== input.shown.total || pricing.shipping !== input.shown.shipping || pricing.subtotal !== input.shown.subtotal) {
@@ -92,10 +89,10 @@ export function reserveOrder(input: {
     }
     const id = randomUUID();
     const { rows:[created] } = await client.query<OrderRow>(
-      `INSERT INTO orders (id,attempt,secret,customer,quote,amount,mode,status,created,request_started)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,'pending',$8,$8) RETURNING *`,
+      `INSERT INTO orders (id,attempt,secret,customer,quote,amount,mode,status,created,request_started,customer_id)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,'pending',$8,$8,$9) RETURNING *`,
       [id,input.attempt,randomBytes(32).toString("hex"),JSON.stringify(input.customer),
-        JSON.stringify(pricing),pricing.total * 10,input.mode,Date.now()]);
+        JSON.stringify(pricing),pricing.total * 10,input.mode,Date.now(),input.customerId ?? null]);
     return { order: readOrder(created), fresh: true } as const;
   });
 }

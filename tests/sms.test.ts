@@ -35,7 +35,8 @@ after(async () => {
   await management.end();
 });
 test("normalization, one-time consumption and concurrent verification", async () => {
-  assert.equal(mobileNumber("+۹۸۹۱۲۳۴۵۶۷۸۹"), "09123456789");
+  assert.equal(mobileNumber("۰۹۱۲۳۴۵۶۷۸۹"), "09123456789");
+  assert.throws(() => mobileNumber("+989123456789"));
   assert.throws(() => mobileNumber("123"));
   const code = await requestCode("09123456789");
   assert.deepEqual(Object.keys(code).sort(), ["id", "mobile"]);

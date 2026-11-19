@@ -56,5 +56,12 @@ export async function migrate() {
       ALTER TABLE login_codes DROP COLUMN mode;
       INSERT INTO schema_migrations VALUES (4);
     `);
+    if (!versions.has(5)) await client.query(`
+      ALTER TABLE orders ADD COLUMN customer_id TEXT REFERENCES customers(id), ADD COLUMN tracking_code TEXT;
+      CREATE INDEX orders_customer_created ON orders(customer_id,created DESC);
+      CREATE TABLE customer_addresses (id TEXT PRIMARY KEY, customer_id TEXT NOT NULL REFERENCES customers(id), recipient JSONB NOT NULL);
+      CREATE INDEX addresses_customer ON customer_addresses(customer_id);
+      INSERT INTO schema_migrations VALUES (5);
+    `);
   });
 }
