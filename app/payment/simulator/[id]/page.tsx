@@ -11,10 +11,11 @@ export default async function Simulator({ params, searchParams }: {
   const item = await order(id);
   if (!item || item.mode !== "simulator" || item.secret !== token || !item.authority) notFound();
   if (item.status !== "pending" && item.status !== "review") redirect(receiptPath(item));
+  const authority = item.authority;
   async function submit(data: FormData) {
     "use server";
     const current = await order(id);
-    if (!current || current.mode !== "simulator" || current.secret !== token || !current.authority) notFound();
+    if (!current || current.mode !== "simulator" || current.secret !== token || current.authority !== authority) notFound();
     const status = data.get("status");
     if (status !== "OK" && status !== "NOK" && status !== "timeout") notFound();
     const result = await verify(current,status);

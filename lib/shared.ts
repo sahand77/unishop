@@ -16,6 +16,7 @@ export const paymentLabels = {
   pending: "در انتظار پرداخت", review: "در انتظار بررسی", paid: "پرداخت شده",
   canceled: "لغو شده", failed: "ناموفق",
 };
+export const customerPaymentLabels = { ...paymentLabels, review: "پرداخت هنوز تأیید نشده" };
 export type Attribute = { id: string; name: string; values: { id: string; name: string }[] };
 export type Category = { id: string; name: string };
 export type Offer = {

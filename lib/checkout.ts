@@ -97,10 +97,28 @@ export function reserveOrder(input: {
   });
 }
 
-export function settle(id: string, status: Status, note: string, reference: string | null = null) {
+export function reopenPayment(id: string) {
+  return transaction(async client => {
+    const current = await order(id, client);
+    if (!current || !["failed", "canceled"].includes(current.status)) return null;
+    for (const line of current.quote.items) {
+      const result = await client.query(
+        "UPDATE offers SET reserved=reserved+$1 WHERE id=$2 AND active=1 AND archived=0 AND stock-reserved >= $1",
+        [line.quantity, line.id]);
+      if (!result.rowCount) throw new Error("موجودی یکی از کالاها برای پرداخت مجدد کافی نیست.");
+    }
+    const { rows } = await client.query<OrderRow>(
+      "UPDATE orders SET status='pending', authority=NULL, message=NULL, reference=NULL, request_started=$2 WHERE id=$1 RETURNING *",
+      [id, Date.now()]);
+    return readOrder(rows[0]);
+  });
+}
+
+export function settle(id: string, status: Status, note: string, reference: string | null = null, attempt?: Order) {
   return transaction(async (client) => {
     const current = await order(id,client);
     if (!current) throw new Error("سفارش پیدا نشد.");
+    if (attempt && (current.authority !== attempt.authority || current.request_started !== attempt.request_started)) return current;
     if (!["pending","review"].includes(current.status)) return current;
     if (status === "paid" || status === "canceled" || status === "failed") {
       for (const item of current.quote.items) {

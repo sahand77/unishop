@@ -1,9 +1,10 @@
+import { CustomerPayment } from "@/components/customer-payment";
 import { redirect } from "next/navigation";
 import { currentCustomer } from "@/lib/customer-auth";
 import { customerLogout } from "@/app/customer-actions";
 import { addresses, customerOrders } from "@/lib/profile";
 import { AddressForm } from "@/components/address-form";
-import { money, paymentLabels, fa } from "@/lib/shared";
+import { money, customerPaymentLabels, fa } from "@/lib/shared";
 
 export default async function AccountPage({searchParams}: {searchParams: Promise<{error?: string}>}) {
   const customer = await currentCustomer();
@@ -14,8 +15,9 @@ export default async function AccountPage({searchParams}: {searchParams: Promise
       {!orders.length && <p>هنوز سفارشی با این حساب ثبت نشده است.</p>}
       {orders.map(o => <article className="panel flow" key={o.id}>
         <h3>سفارش <bdi>{o.id.slice(0,8)}</bdi></h3>
-        <p>{new Date(Number(o.created)).toLocaleDateString("fa-IR")} · {money(o.quote.total)} · {paymentLabels[o.status]}</p>
+        <p>{new Date(Number(o.created)).toLocaleDateString("fa-IR")} · {money(o.quote.total)} · {customerPaymentLabels[o.status]}</p>
         <ul>{o.quote.items.map(i => <li key={i.id}>{i.title} {i.variant} × {fa(i.quantity)}</li>)}</ul>
+        {o.status !== "paid" && <CustomerPayment id={o.id}/>}
         {o.status === "paid" && <p>{o.tracking_code ? <>ارسال شده · کد رهگیری <bdi>{o.tracking_code}</bdi></> : "در انتظار ارسال"}</p>}
       </article>)}
     </section>

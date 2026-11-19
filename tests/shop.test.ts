@@ -7,7 +7,7 @@ import { Pool } from "pg";
 import { addresses, customerOrders } from "../lib/profile";
 import { db, closeDb } from "../lib/db";
 import { migrate } from "../lib/migrations";
-import { initiate, recheck, verify } from "../lib/payment";
+import { initiate, recheck, resumePayment, verify } from "../lib/payment";
 import { rules, saveRule } from "../lib/shipping";
 
 const testUrl = process.env.TEST_DATABASE_URL;
@@ -182,4 +182,21 @@ test("سفارش و آدرس فقط برای حساب مالک نمایش داد
   assert.deepEqual((await addresses(buyer))[0].recipient, customer);
   assert.deepEqual(await addresses(recipient), []);
   await assert.rejects(() => reserveOrder({ ...input, customerId: recipient }));
+});
+
+test("پرداخت مجدد سفارش لغوشده و بازگشت دیرهنگام پرداخت قبلی", async () => {
+  const a = await inventory();
+  const shown = await quote(a.lines, customer.province);
+  const placed = await reserveOrder({ lines: a.lines, customer, shown, attempt: randomUUID(), mode: "simulator" });
+  const first = await initiate(placed.order!);
+  const canceled = await verify(first, "NOK");
+  await Promise.all([resumePayment(canceled), resumePayment(canceled)]);
+  const next = (await order(first.id))!;
+  assert.ok(next.authority);
+  assert.notEqual(next.authority, first.authority);
+  assert.equal((await verify(first, "OK")).status, "pending");
+  assert.equal((await product(a.id))!.offers[0].reserved, 1);
+  const paid = await verify(next, "OK");
+  assert.equal((await resumePayment(paid)).status, "paid");
+  assert.equal((await product(a.id))!.offers[0].stock, 0);
 });

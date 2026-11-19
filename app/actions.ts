@@ -8,9 +8,9 @@ import { login, logout, requireAdmin } from "@/lib/auth";
 import { saveCategory, saveProduct } from "@/lib/catalog";
 import { customerSchema, order, quote, reserveOrder } from "@/lib/checkout";
 import { db } from "@/lib/db";
-import { gatewayLink, initiate, paymentMode, recheck, validateGateway } from "@/lib/payment";
+import { gatewayLink, initiate, paymentMode, recheck, resumePayment, verify, validateGateway } from "@/lib/payment";
 import { saveRule } from "@/lib/shipping";
-import type { Quote } from "@/lib/shared";
+import { customerPaymentLabels, type Quote } from "@/lib/shared";
 
 function message(error: unknown) {
   if (error && typeof error === "object" && "code" in error) return "ذخیره انجام نشد. مقادیر واردشده را بررسی کنید.";
@@ -104,4 +104,22 @@ export async function checkout(input: {
   } catch (error) {
     return { error: message(error) };
   }
+}
+export async function customerPayment(id: string, token: string | null, _previous: string, form: FormData) {
+  const item = await order(id);
+  if (!item || !(token ? item.secret === token : item.customer_id && item.customer_id === (await currentCustomer())?.id)) {
+    return "به این سفارش دسترسی ندارید.";
+  }
+  const action = form.get("action");
+  if (action !== "check" && action !== "pay") return "عملیات معتبر نیست.";
+  let result;
+  try {
+    result = action === "pay" ? await resumePayment(item) : await verify(item);
+  } catch (error) {
+    return message(error);
+  }
+  revalidatePath("/account");
+  revalidatePath(`/orders/${id}`);
+  if (action === "pay" && result.authority && ["pending", "review"].includes(result.status)) redirect(gatewayLink(result));
+  return `وضعیت پرداخت: ${customerPaymentLabels[result.status]}. ${result.message || ""}`;
 }

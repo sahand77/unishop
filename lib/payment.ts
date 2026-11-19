@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { db } from "./db";
-import { order, settle, type Mode, type Order } from "./checkout";
+import { order, reopenPayment, settle, type Mode, type Order } from "./checkout";
 
 export function paymentMode(): Mode {
   const mode = process.env.PAYMENT_MODE || "sandbox";
@@ -56,6 +56,8 @@ async function call(mode: Mode, endpoint: "request" | "verify", fields: Record<s
 }
 
 export async function initiate(item: Order) {
+  const finish = (status: Order["status"], note: string, reference: string | null = null) =>
+    settle(item.id, status, note, reference, item);
   try {
     validateGateway(item.mode);
     const callback = new URL(callbackPath, origin(item.mode));
@@ -65,15 +67,15 @@ export async function initiate(item: Order) {
       ? { code: 100, authority: `sim-${randomUUID()}` }
       : await call(item.mode,"request",{ amount: item.amount, currency: "IRR",
           callback_url: callback.href, description: `سفارش یونی‌شاپ ${item.id.slice(0,8)}` });
-    if (response.code !== 100) return settle(item.id,"failed",`درگاه درخواست را نپذیرفت. کد ${response.code}`);
+    if (response.code !== 100) return finish("failed",`درگاه درخواست را نپذیرفت. کد ${response.code}`);
     if (!response.authority || !/^[A-Za-z0-9-]{1,100}$/.test(response.authority)) {
       throw new Error("شناسهٔ معتبر پرداخت دریافت نشد.");
     }
-    await db().query("UPDATE orders SET authority=$1,message=NULL WHERE id=$2 AND status='pending' AND authority IS NULL",
-      [response.authority,item.id]);
+    await db().query("UPDATE orders SET authority=$1,message=NULL WHERE id=$2 AND status='pending' AND authority IS NULL AND request_started=$3",
+      [response.authority,item.id,item.request_started]);
     return (await order(item.id))!;
   } catch {
-    return settle(item.id,"review","درخواست پرداخت بی‌پاسخ ماند. از پنل دوباره بررسی کنید.");
+    return finish("review","درخواست پرداخت بی‌پاسخ ماند. از پنل دوباره بررسی کنید.");
   }
 }
 
@@ -82,27 +84,39 @@ export async function recheck(item: Order) {
   const now = Date.now();
   const claimed = await db().query(`UPDATE orders SET status='pending',request_started=$1 WHERE id=$2 AND authority IS NULL
     AND (status='review' OR (status='pending' AND request_started<=$3))`,[now,item.id,now-30_000]);
-  return claimed.rowCount ? initiate(item) : (await order(item.id))!;
+  return claimed.rowCount ? initiate({ ...item, request_started: now }) : (await order(item.id))!;
 }
 
 export async function verify(item: Order, returnedStatus?: string) {
+  const finish = (status: Order["status"], note: string, reference: string | null = null) =>
+    settle(item.id, status, note, reference, item);
   if (!item.authority || !["review","pending"].includes(item.status)) return (await order(item.id))!;
   if (item.mode === "simulator") {
-    if (returnedStatus === "OK") return settle(item.id,"paid","پرداخت شبیه‌سازی شد.",`TEST-${item.id.slice(0,8)}`);
-    if (returnedStatus === "NOK") return settle(item.id,"canceled","پرداخت شبیه‌سازی‌شده لغو شد.");
-    return settle(item.id,"review","در انتظار انتخاب نتیجه در درگاه شبیه‌ساز.");
+    if (returnedStatus === "OK") return finish("paid","پرداخت شبیه‌سازی شد.",`TEST-${item.id.slice(0,8)}`);
+    if (returnedStatus === "NOK") return finish("canceled","پرداخت شبیه‌سازی‌شده لغو شد.");
+    return finish("review","در انتظار انتخاب نتیجه در درگاه شبیه‌ساز.");
   }
   try {
     validateGateway(item.mode);
     const result = await call(item.mode,"verify",{ amount: item.amount, authority: item.authority });
     if (result.code === 100 || result.code === 101) {
-      return settle(item.id,"paid","پرداخت تأیید شد.",result.ref_id == null ? null : String(result.ref_id));
+      return finish("paid","پرداخت تأیید شد.",result.ref_id == null ? null : String(result.ref_id));
     }
     if (result.code === -52 || (result.code === -51 && returnedStatus === "NOK")) {
-      return settle(item.id,returnedStatus === "NOK" ? "canceled" : "failed",`پرداخت ناموفق بود. کد ${result.code}`);
+      return finish(returnedStatus === "NOK" ? "canceled" : "failed",`پرداخت ناموفق بود. کد ${result.code}`);
     }
-    return settle(item.id,"review",`تأیید قطعی دریافت نشد. کد ${result.code}`);
+    return finish("review",`تأیید قطعی دریافت نشد. کد ${result.code}`);
   } catch {
-    return settle(item.id,"review","ارتباط با درگاه برقرار نشد. دوباره بررسی کنید.");
+    return finish("review","ارتباط با درگاه برقرار نشد. دوباره بررسی کنید.");
   }
+}
+export async function resumePayment(item: Order) {
+  if (item.status === "paid") return item;
+  const checked = ["failed", "canceled"].includes(item.status) ? item
+    : item.authority ? await verify(item) : await recheck(item);
+  if (checked.status === "failed" || checked.status === "canceled") {
+    const reopened = await reopenPayment(checked.id);
+    return reopened ? initiate(reopened) : (await order(checked.id))!;
+  }
+  return checked;
 }
