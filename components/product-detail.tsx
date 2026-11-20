@@ -9,7 +9,7 @@ import type { ProductMedia } from "@/lib/product-media";
 import { useCart } from "./cart-context";
 import { ProductImage } from "./store-interactions";
 
-export function ProductDetail({ product, category }: { product: Product; category?: string }) {
+export function ProductDetail({ product, category, storeName }: { product: Product; category?: string; storeName: string }) {
   const router = useRouter();
   const { add, items, ready } = useCart();
   const [selected,setSelected] = useState<Record<string,string>>({});
@@ -149,7 +149,7 @@ export function ProductDetail({ product, category }: { product: Product; categor
       </div>
       <div className="pdp-seller">
         <span className="pdp-seller-icon"><Store size={22}/></span>
-        <div><strong>فروشگاه یونی‌شاپ</strong><Link href="/#products">مشاهدهٔ کالاهای فروشگاه <ArrowLeft size={15}/></Link></div>
+        <div><strong>فروشگاه <bdi>{storeName}</bdi></strong><Link href="/#products">مشاهدهٔ کالاهای فروشگاه <ArrowLeft size={15}/></Link></div>
       </div>
     </section>
 

@@ -8,8 +8,7 @@ import "./globals.css";
 import { CartProvider } from "@/components/cart-context";
 
 export const metadata: Metadata = {
-  title: { default: "یونی‌شاپ | فروشگاه آنلاین", template: "%s | یونی‌شاپ" },
-  description: "فروشگاه آنلاین یونی‌شاپ برای خرید کالاهای روزمره",
+  title: "فروشگاه آنلاین",
   referrer: "no-referrer",
 };
 

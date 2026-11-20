@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowDownLeft, ArrowLeft, PackageCheck, ShieldCheck, ShoppingBag, Truck } from "lucide-react";
 import { ProductCards } from "@/components/product-cards";
 import { categories,products } from "@/lib/catalog";
+import { storeName } from "@/lib/store-settings";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,7 @@ export async function generateMetadata(props: PageProps) {
   if (!group) return { alternates: { canonical: publicUrl("/") } };
   const items = await loadItems(category,search);
   return { alternates: { canonical: publicUrl(`/?category=${encodeURIComponent(category)}`) },
-    robots: items.length ? undefined : { index: false }, title: group.name, description: `مشاهدهٔ کالاهای دستهٔ ${group.name} و مقایسهٔ مشخصات و قیمت آن‌ها در یونی‌شاپ.` };
+    robots: items.length ? undefined : { index: false }, title: group.name, description: `مشاهدهٔ کالاهای دستهٔ ${group.name} و مقایسهٔ مشخصات و قیمت آن‌ها در ${await storeName()}.` };
 }
 
 export default async function Home(props: PageProps) {
@@ -45,7 +46,7 @@ export default async function Home(props: PageProps) {
   return <main className="wrap shop-main">
     {!category && !search && <section className={`hero ${featured ? "" : "hero-no-photo"}`}>
       <div className="hero-copy">
-        <span className="hero-label"><span/> فروشگاه آنلاین یونی‌شاپ</span>
+        <span className="hero-label"><span className="hero-label-dot"/><span>فروشگاه آنلاین <bdi>{await storeName()}</bdi></span></span>
         <h1>خرید برای<br/> زندگی هر روز<span>.</span></h1>
         <p>محصولات فروشگاه را ببین و گزینهٔ دلخواهت را انتخاب کن.</p>
         <Link className="button hero-button" href="/#products">دیدن محصولات <ArrowDownLeft size={18}/></Link>

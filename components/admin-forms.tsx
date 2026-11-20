@@ -3,7 +3,7 @@ import { AmountInput } from "./amount-input";
 import { useActionState, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ImagePlus, Plus, Save, Sparkles, Trash2 } from "lucide-react";
-import { previewBasalam, putCategory, putProduct, signIn } from "@/app/actions";
+import { previewBasalam, putCategory, putProduct, putStoreName, signIn } from "@/app/actions";
 import { fa, money, selectionKey, type Attribute, type Category, type Offer, type Product } from "@/lib/shared";
 import type { ProductMedia } from "@/lib/product-media";
 import { MediaEditor, uploadMedia } from "./media-editor";
@@ -16,6 +16,16 @@ export function LoginForm() {
     <label>رمز عبور<input name="password" type="password" autoComplete="current-password" required dir="ltr"/></label>
     {error && <p className="notice error" role="alert">{error}</p>}
     <button className="button primary" disabled={pending}>ورود به پنل</button>
+  </form>;
+}
+
+export function StoreNameForm({ name }: { name: string }) {
+  const [feedback, action, pending] = useActionState(putStoreName, { text: "" });
+  return <form action={action} className="flow">
+    <label>نام فروشگاه<input key={name} name="name" dir="auto" required maxLength={60} defaultValue={name}/></label>
+    <button className="button primary" disabled={pending}>ذخیرهٔ تغییرات</button>
+    {feedback.text && <p className={feedback.error ? "notice error" : "notice"}
+      role={feedback.error ? "alert" : "status"}>{feedback.text}</p>}
   </form>;
 }
 

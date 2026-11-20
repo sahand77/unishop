@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { z } from "zod";
 import { basalamDraft, basalamId, productReels } from "@/lib/basalam";
 import { currentCustomer } from "@/lib/customer-auth";
@@ -11,6 +11,7 @@ import { cancelOrder, customerSchema, order, quote, reserveOrder } from "@/lib/c
 import { db } from "@/lib/db";
 import { gatewayLink, initiate, paymentMode, recheck, resumePayment, verify, validateGateway } from "@/lib/payment";
 import { saveRule } from "@/lib/shipping";
+import { saveStoreName, storeNameTag } from "@/lib/store-settings";
 import { customerPaymentLabels, type Quote } from "@/lib/shared";
 
 function message(error: unknown) {
@@ -28,6 +29,20 @@ export async function signIn(_previous: string, form: FormData) {
 export async function signOut() {
   await logout();
   redirect("/admin/login");
+}
+
+export async function putStoreName(_previous: { text: string; error?: boolean }, form: FormData) {
+  await requireAdmin();
+  const input = z.string().trim().min(1).max(60).safeParse(form.get("name"));
+  if (!input.success) return { text: "نام فروشگاه باید بین ۱ تا ۶۰ نویسه باشد.", error: true };
+
+  try {
+    await saveStoreName(input.data);
+  } catch {
+    return { text: "نام فروشگاه ذخیره نشد. دوباره تلاش کنید.", error: true };
+  }
+  updateTag(storeNameTag);
+  return { text: "نام فروشگاه ذخیره شد." };
 }
 
 export async function putCategory(_previous: string, form: FormData) {

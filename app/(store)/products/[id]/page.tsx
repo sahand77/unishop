@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { ProductDetail } from "@/components/product-detail";
 import { ProductCards } from "@/components/product-cards";
 import { categories,product,relatedProducts,variationName } from "@/lib/catalog";
+import { storeName } from "@/lib/store-settings";
 
 type PageProps = { params: Promise<{ id: string }> };
 const publishedProduct = cache(async (id: string) => {
@@ -21,7 +22,7 @@ export async function generateMetadata({ params }: PageProps) {
     alternates: { canonical: publicUrl(`/products/${encodeURIComponent(item.id)}`) },
     description: description.length > 180
       ? description.slice(0,180).replace(/\s+\S*$/,"") + "…"
-      : description || `مشخصات، قیمت و موجودی ${item.title} در یونی‌شاپ.`,
+      : description || `مشخصات، قیمت و موجودی ${item.title} در ${await storeName()}.`,
   };
 }
 
@@ -51,7 +52,7 @@ export default async function ProductPage({ params }: PageProps) {
     <nav className="breadcrumbs" aria-label="مسیر صفحه"><Link href="/">فروشگاه</Link>
       {category && <Link href={`/?category=${category.id}#products`}>{category.name}</Link>}<span>{item.title}</span>
     </nav>
-    <ProductDetail key={item.id} product={{ ...item, offers }} category={category?.name}/>
+    <ProductDetail key={item.id} product={{ ...item, offers }} category={category?.name} storeName={await storeName()}/>
     {related.length > 0 && <section className="pdp-related" aria-labelledby="related-products">
       <header className="section-head"><h2 id="related-products">کالاهای دیگر فروشگاه</h2><Link href="/#products">مشاهدهٔ همه</Link></header>
       <ProductCards items={related} groups={groups}/>

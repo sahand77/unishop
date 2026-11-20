@@ -13,12 +13,12 @@ export function ProductImage({ src, title, className }: { src: string; title: st
     : <div className={`image-empty ${className || ""}`} role="img" aria-label="بدون تصویر"><ImageOff size={30}/></div>;
 }
 
-export function StoreSearch() {
+export function StoreSearch({ storeName }: { storeName: string }) {
   const search = useSearchParams().get("q") ?? "";
   return <form className="store-search" role="search" action="/#products" method="get">
     <button aria-label="جست‌وجو"><Search size={21}/></button>
     <input key={search} defaultValue={search} type="search" name="q" aria-label="جست‌وجوی کالا"
-      placeholder="جست‌وجو در یونی‌شاپ" maxLength={100}/>
+      placeholder={`جست‌وجو در ${storeName}`} maxLength={100}/>
   </form>;
 }
 

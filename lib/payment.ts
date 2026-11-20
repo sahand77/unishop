@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { db } from "./db";
 import { order, reopenPayment, settle, type Mode, type Order } from "./checkout";
+import { readStoreName } from "./store-settings";
 
 export function paymentMode(): Mode {
   const mode = process.env.PAYMENT_MODE || "sandbox";
@@ -66,7 +67,7 @@ export async function initiate(item: Order) {
     const response = item.mode === "simulator"
       ? { code: 100, authority: `sim-${randomUUID()}` }
       : await call(item.mode,"request",{ amount: item.amount, currency: "IRR",
-          callback_url: callback.href, description: `سفارش یونی‌شاپ ${item.id.slice(0,8)}` });
+          callback_url: callback.href, description: `سفارش ${await readStoreName()} ${item.id.slice(0,8)}` });
     if (response.code !== 100) return finish("failed",`درگاه درخواست را نپذیرفت. کد ${response.code}`);
     if (!response.authority || !/^[A-Za-z0-9-]{1,100}$/.test(response.authority)) {
       throw new Error("شناسهٔ معتبر پرداخت دریافت نشد.");

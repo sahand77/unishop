@@ -76,5 +76,9 @@ export async function migrate() {
           CHECK (fulfillment_status IN ('awaiting_confirmation', 'awaiting_shipment', 'shipped', 'canceled'));
       INSERT INTO schema_migrations VALUES (7);
     `);
+    if (!versions.has(8)) await client.query(`
+      CREATE TABLE store_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO schema_migrations VALUES (8);
+    `);
   });
 }
