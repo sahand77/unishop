@@ -4,7 +4,7 @@ import { z } from "zod";
 import { variationName } from "./catalog";
 import { db, transaction } from "./db";
 import { matchingRule, rules } from "./shipping";
-import { provinces, type Quote, type paymentLabels } from "./shared";
+import { provinces, type FulfillmentStatus, type Quote, type paymentLabels } from "./shared";
 
 export const linesSchema = z.array(z.object({
   id: z.string().regex(/^[a-z0-9-]{1,80}$/i), quantity: z.number().int().min(1).max(99),
@@ -22,6 +22,7 @@ type QuoteRow = {
 export type Order = {
   customer_id: string | null; tracking_code: string | null; id: string; attempt: string; secret: string; customer: Customer; quote: Quote; amount: number;
   authority: string | null; mode: Mode; status: Status;
+  fulfillment_status: FulfillmentStatus;
   reference: string | null; message: string | null; created: number; request_started: number;
 };
 type OrderRow = Omit<Order, "customer" | "quote" | "amount" | "created" | "request_started">
@@ -100,7 +101,7 @@ export function reserveOrder(input: {
 export function reopenPayment(id: string) {
   return transaction(async client => {
     const current = await order(id, client);
-    if (!current || !["failed", "canceled"].includes(current.status)) return null;
+    if (!current || current.fulfillment_status === "canceled" || !["failed", "canceled"].includes(current.status)) return null;
     for (const line of current.quote.items) {
       const result = await client.query(
         "UPDATE offers SET reserved=reserved+$1 WHERE id=$2 AND active=1 AND archived=0 AND stock-reserved >= $1",
@@ -114,6 +115,34 @@ export function reopenPayment(id: string) {
   });
 }
 
+export function canCancelOrder(item: Order) {
+  return item.fulfillment_status === "awaiting_confirmation"
+    && ["pending", "review"].includes(item.status)
+    && (item.mode !== "live" || !item.authority);
+}
+
+async function releaseReservation(client: PoolClient, item: Order, paid: boolean) {
+  for (const line of item.quote.items) {
+    await client.query("UPDATE offers SET reserved=reserved-$1,stock=stock-$2 WHERE id=$3",
+      [line.quantity, paid ? line.quantity : 0, line.id]);
+  }
+}
+
+export function cancelOrder(id: string) {
+  return transaction(async client => {
+    const { rows: [row] } = await client.query<OrderRow>("SELECT * FROM orders WHERE id=$1 FOR UPDATE", [id]);
+    if (!row) return false;
+    const current = readOrder(row);
+    if (current.fulfillment_status === "canceled") return true;
+    if (!canCancelOrder(current)) return false;
+
+    await releaseReservation(client, current, false);
+    await client.query(`UPDATE orders SET status='canceled', fulfillment_status='canceled', message=$2 WHERE id=$1`,
+      [id, "سفارش توسط مدیر لغو شد."]);
+    return true;
+  });
+}
+
 export function settle(id: string, status: Status, note: string, reference: string | null = null, attempt?: Order) {
   return transaction(async (client) => {
     const current = await order(id,client);
@@ -121,10 +150,7 @@ export function settle(id: string, status: Status, note: string, reference: stri
     if (attempt && (current.authority !== attempt.authority || current.request_started !== attempt.request_started)) return current;
     if (!["pending","review"].includes(current.status)) return current;
     if (status === "paid" || status === "canceled" || status === "failed") {
-      for (const item of current.quote.items) {
-        await client.query("UPDATE offers SET reserved=reserved-$1,stock=stock-$2 WHERE id=$3",
-          [item.quantity,status === "paid" ? item.quantity : 0,item.id]);
-      }
+      await releaseReservation(client, current, status === "paid");
     }
     const { rows:[updated] } = await client.query<OrderRow>(
       "UPDATE orders SET status=$1,message=$2,reference=$3 WHERE id=$4 RETURNING *",[status,note,reference,id]);

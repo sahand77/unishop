@@ -17,6 +17,13 @@ export const paymentLabels = {
   canceled: "لغو شده", failed: "ناموفق",
 };
 export const customerPaymentLabels = { ...paymentLabels, review: "پرداخت هنوز تأیید نشده" };
+export const fulfillmentLabels = {
+  awaiting_confirmation: "در انتظار تأیید",
+  awaiting_shipment: "در انتظار ارسال",
+  shipped: "ارسال شده",
+  canceled: "لغو شده",
+};
+export type FulfillmentStatus = keyof typeof fulfillmentLabels;
 export type Attribute = { id: string; name: string; values: { id: string; name: string }[] };
 export type Category = { id: string; name: string };
 export type Offer = {

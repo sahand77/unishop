@@ -5,11 +5,13 @@ import { Pool } from "pg";
 import { mobileNumber, sendCode } from "../lib/sms";
 import { requestCode, verifyCode } from "../lib/customer-login";
 import { db, closeDb } from "../lib/db";
+import { advanceFulfillment } from "../lib/fulfillment";
 import { migrate } from "../lib/migrations";
 
 const schema = `sms_test_${randomUUID().replaceAll("-", "")}`;
 const management = new Pool({ connectionString: process.env.TEST_DATABASE_URL });
 const delivered = new Map<string, string>();
+const notifications: { mobile: string; templateId: number; parameters: { name: string; value: string }[] }[] = [];
 const originalFetch = globalThis.fetch;
 before(async () => {
   if (!process.env.TEST_DATABASE_URL) throw new Error("TEST_DATABASE_URL is required");
@@ -17,12 +19,18 @@ before(async () => {
   url.searchParams.set("options", `-c search_path=${schema}`);
   process.env.DATABASE_URL = url.href;
   process.env.SMS_API_KEY = "test-key";
+  delete process.env.SMS_TEMPLATE_ID;
+  delete process.env.SMS_CODE_PARAMETER;
   globalThis.fetch = async (_url, options) => {
     assert.equal(_url, "https://api.sms.ir/v1/send/verify");
     assert.equal((options?.headers as Record<string, string>)["X-API-KEY"], "test-key");
-    assert.equal(JSON.parse(String(options?.body)).templateId, 123456);
     const payload = JSON.parse(String(options?.body));
-    delivered.set(payload.mobile, payload.parameters[0].value);
+    if (payload.templateId === 259263) {
+      assert.equal(payload.parameters[0].name, "CODE");
+      delivered.set(payload.mobile, payload.parameters[0].value);
+    } else {
+      notifications.push(payload);
+    }
     return Response.json({ status: 1 });
   };
   await management.query(`CREATE SCHEMA ${schema}`);
@@ -69,4 +77,38 @@ test("provider failure leaves challenge unusable and concurrent sends are limite
   globalThis.fetch = mock;
   const results = await Promise.allSettled([requestCode("09123456784"), requestCode("09123456784")]);
   assert.equal(results.filter(x => x.status === "fulfilled").length, 1);
+});
+
+test("order approval and shipment send each template once", async () => {
+  const id = randomUUID();
+  const customerId = randomUUID();
+  const mobile = "09123456785";
+  await db().query("INSERT INTO customers (id,mobile) VALUES ($1,$2)", [customerId, mobile]);
+  const { rows: [created] } = await db().query(`
+    INSERT INTO orders (id,attempt,secret,customer,quote,amount,mode,status,created,request_started,customer_id)
+    VALUES ($1,$1,'secret',$2,'{}',0,'simulator','pending',0,0,$3)
+    RETURNING fulfillment_status
+  `, [id, JSON.stringify({ mobile: "09123456786" }), customerId]);
+  assert.equal(created.fulfillment_status, "awaiting_confirmation");
+  assert.equal(await advanceFulfillment(id, { event: "confirm" }), "unchanged");
+
+  await db().query("UPDATE orders SET status='paid' WHERE id=$1", [id]);
+  const ship = { event: "ship", trackingCode: "123456789012345678901234" } as const;
+  assert.equal(await advanceFulfillment(id, ship), "unchanged");
+  const confirmations = await Promise.all([
+    advanceFulfillment(id, { event: "confirm" }),
+    advanceFulfillment(id, { event: "confirm" }),
+  ]);
+  assert.deepEqual(confirmations.sort(), ["sent", "unchanged"]);
+  const { rows: [confirmed] } = await db().query("SELECT fulfillment_status FROM orders WHERE id=$1", [id]);
+  assert.equal(confirmed.fulfillment_status, "awaiting_shipment");
+
+  assert.equal(await advanceFulfillment(id, ship), "sent");
+  assert.equal(await advanceFulfillment(id, ship), "unchanged");
+  const { rows: [shipped] } = await db().query("SELECT status,fulfillment_status,tracking_code FROM orders WHERE id=$1", [id]);
+  assert.deepEqual(shipped, { status: "paid", fulfillment_status: "shipped", tracking_code: ship.trackingCode });
+  assert.deepEqual(notifications, [
+    { mobile, templateId: 868696, parameters: [{ name: "TOKEN", value: ` شماره سفارش: ${id.slice(0,8)}` }] },
+    { mobile, templateId: 841736, parameters: [{ name: "ORDERID", value: ship.trackingCode }] },
+  ]);
 });

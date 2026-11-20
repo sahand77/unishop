@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 import { categories, product, saveCategory, saveProduct } from "../lib/catalog";
-import { order, quote, reserveOrder } from "../lib/checkout";
+import { cancelOrder, order, quote, reserveOrder } from "../lib/checkout";
 import { Pool } from "pg";
 import { addresses, customerOrders } from "../lib/profile";
 import { db, closeDb } from "../lib/db";
@@ -199,4 +199,26 @@ test("پرداخت مجدد سفارش لغوشده و بازگشت دیرهنگ
   const paid = await verify(next, "OK");
   assert.equal((await resumePayment(paid)).status, "paid");
   assert.equal((await product(a.id))!.offers[0].stock, 0);
+});
+
+test("لغو سفارش در انتظار بررسی، رزرو را یک‌بار آزاد می‌کند و پرداخت دوباره فعال نمی‌شود", async () => {
+  const item = await inventory();
+  const shown = await quote(item.lines, customer.province);
+  const placed = await reserveOrder({ lines: item.lines, customer, shown, attempt: randomUUID(), mode: "simulator" });
+  const pending = await initiate(placed.order!);
+  const review = await verify(pending);
+  assert.equal(review.status, "review");
+
+  await db().query("UPDATE orders SET mode='live' WHERE id=$1", [review.id]);
+  assert.equal(await cancelOrder(review.id), false);
+  assert.equal((await product(item.id))!.offers[0].reserved, 1);
+  await db().query("UPDATE orders SET mode='simulator' WHERE id=$1", [review.id]);
+
+  assert.deepEqual(await Promise.all([cancelOrder(review.id), cancelOrder(review.id)]), [true, true]);
+  const canceled = (await order(review.id))!;
+  assert.equal(canceled.fulfillment_status, "canceled");
+  assert.equal((await verify(review, "OK")).status, "canceled");
+  assert.equal((await resumePayment(canceled)).status, "canceled");
+  const { stock, reserved } = (await product(item.id))!.offers[0];
+  assert.deepEqual({ stock, reserved }, { stock: 1, reserved: 0 });
 });

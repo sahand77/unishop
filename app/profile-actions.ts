@@ -6,6 +6,7 @@ import { requireAdmin } from "@/lib/auth";
 import { customerSchema } from "@/lib/checkout";
 import { currentCustomer } from "@/lib/customer-auth";
 import { db } from "@/lib/db";
+import { advanceFulfillment } from "@/lib/fulfillment";
 import { digits } from "@/lib/sms";
 
 export async function changeAddress(form: FormData) {
@@ -28,11 +29,23 @@ export async function changeAddress(form: FormData) {
   redirect("/account#addresses");
 }
 
-export async function updateTracking(id: string, form: FormData) {
+export async function updateFulfillment(id: string, event: "confirm" | "ship" | "tracking", form: FormData) {
   await requireAdmin();
   const code = String(form.get("tracking") || "").trim();
-  if (code.length > 80) throw new Error("کد رهگیری بیش از حد طولانی است.");
-  await db().query("UPDATE orders SET tracking_code=$1 WHERE id=$2 AND status='paid'", [code || null, id]);
+  const adminPath = `/admin/orders/${id}`;
+  let smsFailed = false;
+  if (event === "tracking") {
+    if (!code || code.length > 80) redirect(`${adminPath}?fulfillment=invalid_tracking`);
+    await db().query("UPDATE orders SET tracking_code=$1 WHERE id=$2 AND fulfillment_status='shipped'", [code, id]);
+  } else {
+    if (event === "ship" && (!code || code.length > 25)) redirect(`${adminPath}?fulfillment=invalid_tracking`);
+    const result = await advanceFulfillment(id, event === "ship" ? { event, trackingCode: code } : { event });
+    smsFailed = result === "sms_failed";
+  }
   revalidatePath("/account");
-  revalidatePath(`/admin/orders/${id}`);
+  revalidatePath(`/orders/${id}`);
+  revalidatePath("/admin/orders");
+  revalidatePath("/admin");
+  revalidatePath(adminPath);
+  redirect(smsFailed ? `${adminPath}?fulfillment=sms_failed` : adminPath);
 }

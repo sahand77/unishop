@@ -7,7 +7,7 @@ import { basalamDraft, basalamId, productReels } from "@/lib/basalam";
 import { currentCustomer } from "@/lib/customer-auth";
 import { login, logout, requireAdmin } from "@/lib/auth";
 import { saveCategory, saveProduct } from "@/lib/catalog";
-import { customerSchema, order, quote, reserveOrder } from "@/lib/checkout";
+import { cancelOrder, customerSchema, order, quote, reserveOrder } from "@/lib/checkout";
 import { db } from "@/lib/db";
 import { gatewayLink, initiate, paymentMode, recheck, resumePayment, verify, validateGateway } from "@/lib/payment";
 import { saveRule } from "@/lib/shipping";
@@ -94,6 +94,18 @@ export async function retryPayment(id: string) {
   const item = await order(id);
   if (item && ["review","pending"].includes(item.status)) await recheck(item);
   revalidatePath(`/admin/orders/${id}`);
+}
+
+export async function cancelAdminOrder(id: string) {
+  await requireAdmin();
+  const adminPath = `/admin/orders/${id}`;
+  if (!(await cancelOrder(id))) redirect(`${adminPath}?fulfillment=cancellation_unavailable`);
+  revalidatePath("/account");
+  revalidatePath(`/orders/${id}`);
+  revalidatePath("/admin/orders");
+  revalidatePath("/admin");
+  revalidatePath(adminPath);
+  redirect(adminPath);
 }
 
 export async function getQuote(lines: unknown, province: unknown) {

@@ -111,7 +111,7 @@ export async function verify(item: Order, returnedStatus?: string) {
   }
 }
 export async function resumePayment(item: Order) {
-  if (item.status === "paid") return item;
+  if (item.status === "paid" || item.fulfillment_status === "canceled") return item;
   const checked = ["failed", "canceled"].includes(item.status) ? item
     : item.authority ? await verify(item) : await recheck(item);
   if (checked.status === "failed" || checked.status === "canceled") {

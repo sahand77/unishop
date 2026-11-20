@@ -63,5 +63,18 @@ export async function migrate() {
       CREATE INDEX addresses_customer ON customer_addresses(customer_id);
       INSERT INTO schema_migrations VALUES (5);
     `);
+    if (!versions.has(6)) await client.query(`
+      ALTER TABLE orders ADD COLUMN fulfillment_status TEXT NOT NULL DEFAULT 'awaiting_confirmation'
+        CHECK (fulfillment_status IN ('awaiting_confirmation', 'awaiting_shipment', 'shipped'));
+      UPDATE orders SET fulfillment_status='shipped'
+        WHERE status='paid' AND NULLIF(BTRIM(tracking_code), '') IS NOT NULL;
+      INSERT INTO schema_migrations VALUES (6);
+    `);
+    if (!versions.has(7)) await client.query(`
+      ALTER TABLE orders DROP CONSTRAINT orders_fulfillment_status_check,
+        ADD CONSTRAINT orders_fulfillment_status_check
+          CHECK (fulfillment_status IN ('awaiting_confirmation', 'awaiting_shipment', 'shipped', 'canceled'));
+      INSERT INTO schema_migrations VALUES (7);
+    `);
   });
 }

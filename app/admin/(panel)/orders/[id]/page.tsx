@@ -1,18 +1,25 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { updateTracking } from "@/app/profile-actions";
-import { retryPayment } from "@/app/actions";
-import { order } from "@/lib/checkout";
-import { fa,money,paymentLabels } from "@/lib/shared";
+import { updateFulfillment } from "@/app/profile-actions";
+import { cancelAdminOrder, retryPayment } from "@/app/actions";
+import { canCancelOrder, order } from "@/lib/checkout";
+import { fa, fulfillmentLabels, money, paymentLabels } from "@/lib/shared";
 import { requireAdmin } from "@/lib/auth";
 
-export default async function OrderDetail({ params }: { params: Promise<{ id: string }> }) {
+export default async function OrderDetail({ params, searchParams }: {
+  params: Promise<{ id: string }>; searchParams: Promise<{ fulfillment?: string }>;
+}) {
   await requireAdmin();
   const item = await order((await params).id);
   if (!item) notFound();
   const { customer, quote } = item;
+  const feedback = (await searchParams).fulfillment;
+  const shipped = item.fulfillment_status === "shipped";
   return <div className="flow"><nav className="breadcrumbs" aria-label="مسیر صفحه"><Link href="/admin/orders">سفارش‌ها</Link><span>جزئیات</span></nav>
-    <header className="section-head"><h1>سفارش <bdi>{item.id.slice(0,8)}</bdi></h1><span className={`badge ${item.status}`}>{paymentLabels[item.status]}</span></header>
+    <header className="section-head"><h1>سفارش <bdi>{item.id.slice(0,8)}</bdi></h1><span className={`badge ${item.fulfillment_status}`}>{fulfillmentLabels[item.fulfillment_status]}</span></header>
+    {feedback === "sms_failed" && <p role="alert">وضعیت سفارش ثبت شد، اما ارسال پیامک موفق نبود.</p>}
+    {feedback === "cancellation_unavailable" && <p role="alert">لغو سفارش در وضعیت فعلی امکان‌پذیر نیست.</p>}
+    {feedback === "invalid_tracking" && <p role="alert">{shipped ? "کد رهگیری باید بین ۱ تا ۸۰ نویسه باشد." : "کد رهگیری باید بین ۱ تا ۲۵ نویسه باشد."}</p>}
     <div className="form-grid">
       <section className="panel flow"><h2>اطلاعات گیرنده</h2><p>{customer.name} · <bdi>{customer.mobile}</bdi></p>
         <p>{customer.province}، {customer.city}، {customer.address}</p><p>کد پستی <bdi>{customer.postalCode}</bdi></p></section>
@@ -21,11 +28,16 @@ export default async function OrderDetail({ params }: { params: Promise<{ id: st
         {item.reference && <p>شمارهٔ پیگیری <bdi>{item.reference}</bdi></p>}
         {(item.status === "review" || item.status === "pending") && <form action={retryPayment.bind(null,item.id)}>
           <button className="button">بررسی دوبارهٔ پرداخت</button></form>}
+        {canCancelOrder(item) && <form action={cancelAdminOrder.bind(null,item.id)}>
+          <button className="button danger">لغو سفارش</button></form>}
       </section>
     </div>
-    {item.status === "paid" && <form className="panel flow" action={updateTracking.bind(null,item.id)}>
-      <label>کد رهگیری مرسوله<input name="tracking" dir="ltr" maxLength={80} defaultValue={item.tracking_code || ""}/></label>
-      <button className="button">ذخیرهٔ وضعیت ارسال</button>
+    {item.status === "paid" && item.fulfillment_status === "awaiting_confirmation" && <form className="panel flow" action={updateFulfillment.bind(null,item.id,"confirm")}>
+      <button className="button">تأیید سفارش</button>
+    </form>}
+    {item.status === "paid" && item.fulfillment_status !== "awaiting_confirmation" && <form className="panel flow" action={updateFulfillment.bind(null,item.id,shipped ? "tracking" : "ship")}>
+      <label>کد رهگیری مرسوله<input name="tracking" dir="ltr" required maxLength={shipped ? 80 : 25} defaultValue={item.tracking_code || ""}/></label>
+      <button className="button">{shipped ? "ذخیرهٔ کد رهگیری" : "ثبت ارسال و اطلاع به مشتری"}</button>
     </form>}
     <section className="panel flow table-wrap"><h2>اقلام سفارش</h2>
       <table><thead><tr><th>کالا</th><th>ترکیب</th><th>تعداد</th><th>قیمت واحد</th></tr></thead>

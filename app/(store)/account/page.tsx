@@ -4,7 +4,7 @@ import { currentCustomer } from "@/lib/customer-auth";
 import { customerLogout } from "@/app/customer-actions";
 import { addresses, customerOrders } from "@/lib/profile";
 import { AddressForm } from "@/components/address-form";
-import { money, customerPaymentLabels, fa } from "@/lib/shared";
+import { money, customerPaymentLabels, fa, fulfillmentLabels } from "@/lib/shared";
 
 export default async function AccountPage({searchParams}: {searchParams: Promise<{error?: string}>}) {
   const customer = await currentCustomer();
@@ -17,8 +17,8 @@ export default async function AccountPage({searchParams}: {searchParams: Promise
         <h3>سفارش <bdi>{o.id.slice(0,8)}</bdi></h3>
         <p>{new Date(Number(o.created)).toLocaleDateString("fa-IR")} · {money(o.quote.total)} · {customerPaymentLabels[o.status]}</p>
         <ul>{o.quote.items.map(i => <li key={i.id}>{i.title} {i.variant} × {fa(i.quantity)}</li>)}</ul>
-        {o.status !== "paid" && <CustomerPayment id={o.id}/>}
-        {o.status === "paid" && <p>{o.tracking_code ? <>ارسال شده · کد رهگیری <bdi>{o.tracking_code}</bdi></> : "در انتظار ارسال"}</p>}
+        {o.status !== "paid" && o.fulfillment_status !== "canceled" && <CustomerPayment id={o.id}/>}
+        <p>{fulfillmentLabels[o.fulfillment_status]}{o.tracking_code && <> · کد رهگیری <bdi>{o.tracking_code}</bdi></>}</p>
       </article>)}
     </section>
     <section className="panel flow" id="addresses"><h2>آدرس‌ها و گیرنده‌ها</h2>
