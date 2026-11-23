@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { Save, Trash2 } from "lucide-react";
 import { putRule, removeRule } from "@/app/actions";
 import { fa, provinces, type Category, type ShippingRule } from "@/lib/shared";
+import { PendingButton } from "./pending-button";
 
 const blank: ShippingRule = { id:"",name:"",priority:100,fee:0,provinces:[],categories:[],
   minQuantity:null,maxQuantity:null,minWeight:null,maxWeight:null,minSubtotal:null,maxSubtotal:null };
@@ -12,6 +13,7 @@ export function RuleForm({ rule,categories }: { rule?: ShippingRule; categories:
   const [value,setValue] = useState(rule || blank);
   const [feedback,setFeedback] = useState<{ error?: string; success?: string }>({});
   const [pending,start] = useTransition();
+  const [removing,setRemoving] = useState(false);
   const bound = (name: "minQuantity" | "maxQuantity" | "minWeight" | "maxWeight" | "minSubtotal" | "maxSubtotal", label: string) =>
     <label>{label}{name === "minSubtotal" || name === "maxSubtotal" ? <AmountInput value={value[name]} placeholder="بدون محدودیت" onChange={amount => setValue({...value, [name]: amount})}/> : <input type="number" min={0} max={1000000000} value={value[name] ?? ""} placeholder="بدون محدودیت"
       onChange={(event) => setValue({ ...value,[name]:event.target.value === "" ? null : Number(event.target.value) })}/>}</label>;
@@ -19,7 +21,9 @@ export function RuleForm({ rule,categories }: { rule?: ShippingRule; categories:
     setValue({ ...value,[key]:value[key].includes(member) ? value[key].filter((item) => item !== member) : [...value[key],member] });
   }
   function submit(event: React.FormEvent) {
-    event.preventDefault(); setFeedback({});
+    event.preventDefault();
+    if (pending) return;
+    setRemoving(false); setFeedback({});
     start(async () => {
       try {
         const result = await putRule(value);
@@ -27,6 +31,14 @@ export function RuleForm({ rule,categories }: { rule?: ShippingRule; categories:
         if (!rule) setValue(blank);
         setFeedback({ success:"قانون ارسال ذخیره شد." });
       } catch { setFeedback({ error:"ارتباط با فروشگاه برقرار نشد." }); }
+    });
+  }
+  function remove() {
+    if (!rule || pending || !window.confirm("این قانون ارسال حذف شود؟")) return;
+    setRemoving(true); setFeedback({});
+    start(async () => {
+      try { await removeRule(rule.id); }
+      catch { setFeedback({ error:"حذف قانون ارسال انجام نشد. دوباره تلاش کنید." }); }
     });
   }
   return <form className="flow" onSubmit={submit}><fieldset disabled={pending} className="flow">
@@ -52,9 +64,11 @@ export function RuleForm({ rule,categories }: { rule?: ShippingRule; categories:
     </div></details>
     {feedback.error && <p className="notice error" role="alert">{feedback.error}</p>}
     {feedback.success && <p className="notice" role="status">{feedback.success}</p>}
-    <div className="editor-buttons"><button className="button primary"><Save size={16}/> ذخیرهٔ قانون</button>
-      {rule && <button className="button danger" type="button" onClick={() => {
-        if (window.confirm("این قانون ارسال حذف شود؟")) start(async () => { await removeRule(rule.id); });
-      }}><Trash2 size={16}/> حذف قانون</button>}</div>
+    <div className="editor-buttons">
+      <PendingButton type="submit" className="button primary" busy={pending && !removing} pendingLabel="در حال ذخیره…"><Save size={16}/> ذخیرهٔ قانون</PendingButton>
+      {rule && <PendingButton className="button danger" type="button" busy={pending && removing} pendingLabel="در حال حذف…" onClick={remove}>
+        <Trash2 size={16}/> حذف قانون
+      </PendingButton>}
+    </div>
   </fieldset></form>;
 }

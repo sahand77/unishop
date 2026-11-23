@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState, type DragEvent } from "react";
 import { GripVertical, ImagePlus, Trash2, Video, X } from "lucide-react";
 import type { ProductMedia } from "@/lib/product-media";
 import { fa } from "@/lib/shared";
+import { PendingButton } from "./pending-button";
 
 export async function uploadMedia(file: File): Promise<ProductMedia> {
   const response = await fetch("/api/uploads",{
@@ -165,9 +166,9 @@ export function MediaEditor({ items,onChange,onBusy,onPreview }: {
     </ol>}
     <input ref={input} type="file" multiple hidden accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,.mp4,.webm"
       onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ""; void addFiles(files); }}/>
-    <button type="button" className="button" disabled={!!progress} onClick={() => input.current?.click()}>
+    <PendingButton type="button" className="button" busy={!!progress} pendingLabel="در حال بارگذاری…" onClick={() => input.current?.click()}>
       <ImagePlus size={18}/> افزودن عکس و ویدئو
-    </button>
+    </PendingButton>
     {progress && <p role="status">{progress}</p>}
     {errors.length > 0 && <ul className="notice error" role="alert">{errors.map((error,index) => <li key={index}>{error}</li>)}</ul>}
   </section>;

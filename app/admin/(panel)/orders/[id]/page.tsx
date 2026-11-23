@@ -5,6 +5,7 @@ import { cancelAdminOrder, retryPayment } from "@/app/actions";
 import { canCancelOrder, order } from "@/lib/checkout";
 import { fa, fulfillmentLabels, money, paymentLabels } from "@/lib/shared";
 import { requireAdmin } from "@/lib/auth";
+import { PendingSubmitButton } from "@/components/pending-button";
 
 export default async function OrderDetail({ params, searchParams }: {
   params: Promise<{ id: string }>; searchParams: Promise<{ fulfillment?: string }>;
@@ -27,17 +28,19 @@ export default async function OrderDetail({ params, searchParams }: {
         <p>درگاه {item.mode === "live" ? "زرین‌پال واقعی" : item.mode === "sandbox" ? "زرین‌پال آزمایشی" : "شبیه‌ساز محلی"}</p>
         {item.reference && <p>شمارهٔ پیگیری <bdi>{item.reference}</bdi></p>}
         {(item.status === "review" || item.status === "pending") && <form action={retryPayment.bind(null,item.id)}>
-          <button className="button">بررسی دوبارهٔ پرداخت</button></form>}
+          <PendingSubmitButton className="button" pendingLabel="در حال بررسی پرداخت…">بررسی دوبارهٔ پرداخت</PendingSubmitButton></form>}
         {canCancelOrder(item) && <form action={cancelAdminOrder.bind(null,item.id)}>
-          <button className="button danger">لغو سفارش</button></form>}
+          <PendingSubmitButton className="button danger" pendingLabel="در حال لغو…">لغو سفارش</PendingSubmitButton></form>}
       </section>
     </div>
     {item.status === "paid" && item.fulfillment_status === "awaiting_confirmation" && <form className="panel flow" action={updateFulfillment.bind(null,item.id,"confirm")}>
-      <button className="button">تأیید سفارش</button>
+      <PendingSubmitButton className="button" pendingLabel="در حال تأیید سفارش…">تأیید سفارش</PendingSubmitButton>
     </form>}
     {item.status === "paid" && item.fulfillment_status !== "awaiting_confirmation" && <form className="panel flow" action={updateFulfillment.bind(null,item.id,shipped ? "tracking" : "ship")}>
       <label>کد رهگیری مرسوله<input name="tracking" dir="ltr" required maxLength={shipped ? 80 : 25} defaultValue={item.tracking_code || ""}/></label>
-      <button className="button">{shipped ? "ذخیرهٔ کد رهگیری" : "ثبت ارسال و اطلاع به مشتری"}</button>
+      <PendingSubmitButton className="button" pendingLabel={shipped ? "در حال ذخیره…" : "در حال ثبت ارسال…"}>
+        {shipped ? "ذخیرهٔ کد رهگیری" : "ثبت ارسال و اطلاع به مشتری"}
+      </PendingSubmitButton>
     </form>}
     <section className="panel flow table-wrap"><h2>اقلام سفارش</h2>
       <table><thead><tr><th>کالا</th><th>ترکیب</th><th>تعداد</th><th>قیمت واحد</th></tr></thead>

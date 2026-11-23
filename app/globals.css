@@ -10,6 +10,15 @@ body { margin:0; color:var(--ink); background:var(--page); font-family:Vazirmatn
 button,input,select,textarea { font:inherit; }
 button { cursor:pointer; }
 button:disabled { opacity:.5; cursor:not-allowed; }
+button[aria-busy=true] { opacity:.85; cursor:wait; }
+.pending-button-content { display:inline-grid; }
+.pending-button-content > span { grid-area:1/1; display:inline-flex; align-items:center; justify-content:center; gap:8px; }
+.pending-button-wait,button[aria-busy=true] .pending-button-idle { visibility:hidden; }
+button[aria-busy=true] .pending-button-wait { visibility:visible; }
+.button-spinner { flex:none; inline-size:1em; block-size:1em; border:2px solid currentColor; border-inline-end-color:transparent; border-radius:50%; }
+button[aria-busy=true] .button-spinner { animation:button-spin .75s linear infinite; }
+@keyframes button-spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion:reduce) { button[aria-busy=true] .button-spinner { animation:none; } }
 a { color:var(--primary); text-decoration:none; }
 a:hover { color:#0c4231; }
 a,button,input,select,textarea,summary { -webkit-tap-highlight-color:transparent; }

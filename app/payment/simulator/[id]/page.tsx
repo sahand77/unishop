@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { order } from "@/lib/checkout";
 import { receiptPath, verify } from "@/lib/payment";
 import { money } from "@/lib/shared";
+import { PendingSubmitButton } from "@/components/pending-button";
 
 export default async function Simulator({ params, searchParams }: {
   params: Promise<{ id: string }>; searchParams: Promise<{ token?: string }>;
@@ -25,9 +26,9 @@ export default async function Simulator({ params, searchParams }: {
     <h1>شبیه‌ساز درگاه پرداخت</h1>
     <p>مبلغ سفارش {money(item.quote.total)}</p>
     <form action={submit} className="flow">
-      <button name="status" value="OK" className="button primary">پرداخت موفق</button>
-      <button name="status" value="NOK" className="button">لغو پرداخت</button>
-      <button name="status" value="timeout" className="button">شبیه‌سازی قطع ارتباط</button>
+      <PendingSubmitButton name="status" value="OK" className="button primary" pendingLabel="در حال ثبت پرداخت…">پرداخت موفق</PendingSubmitButton>
+      <PendingSubmitButton name="status" value="NOK" className="button" pendingLabel="در حال لغو…">لغو پرداخت</PendingSubmitButton>
+      <PendingSubmitButton name="status" value="timeout" className="button" pendingLabel="در حال شبیه‌سازی…">شبیه‌سازی قطع ارتباط</PendingSubmitButton>
     </form>
   </section></main>;
 }

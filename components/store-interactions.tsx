@@ -7,6 +7,7 @@ import { ArrowLeft, ImageOff, Menu, Minus, Search, Plus, ShoppingBag, Trash2 } f
 import { checkout, getQuote } from "@/app/actions";
 import { fa, money, provinces, type Category, type Quote } from "@/lib/shared";
 import { useCart } from "./cart-context";
+import { PendingButton } from "./pending-button";
 
 export function ProductImage({ src, title, className }: { src: string; title: string; className?: string }) {
   return src ? <img src={src} alt={title} className={className} />
@@ -82,9 +83,20 @@ export function CheckoutScreen({ saved }: { saved: import("@/lib/profile").Saved
   const [error,setError] = useState("");
   const [notice,setNotice] = useState("");
   const [pending,start] = useTransition();
+  const [redirecting,setRedirecting] = useState(false);
+  const busy = pending || redirecting;
   const [attempt,setAttempt] = useState("");
   const lines = items.map(({ id,quantity }) => ({ id,quantity }));
   const estimate = items.reduce((total,item) => total+item.quantity*item.price,0);
+
+  useEffect(() => {
+    function reset(event: PageTransitionEvent) {
+      if (event.persisted) setRedirecting(false);
+    }
+    window.addEventListener("pageshow",reset);
+    return () => window.removeEventListener("pageshow",reset);
+  }, []);
+
   if (!ready) return <p>در حال بارگذاری سبد خرید…</p>;
   if (!items.length) return <EmptyBasket/>;
   function field(name: keyof typeof customer, value: string) {
@@ -93,6 +105,7 @@ export function CheckoutScreen({ saved }: { saved: import("@/lib/profile").Saved
     if (name === "province") { setPricing(undefined); setNotice(""); setError(""); }
   }
   function calculate() {
+    if (busy || !customer.province) return;
     setError(""); setNotice("");
     start(async () => {
       try {
@@ -104,7 +117,7 @@ export function CheckoutScreen({ saved }: { saved: import("@/lib/profile").Saved
   }
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!validateRecipient(event)) return;
+    if (busy || !validateRecipient(event)) return;
     if (!pricing) { calculate(); return; }
     setError(""); setNotice("");
     const key = attempt || crypto.randomUUID();
@@ -116,11 +129,12 @@ export function CheckoutScreen({ saved }: { saved: import("@/lib/profile").Saved
         if ("changed" in result) { setPricing(result.changed); setNotice("مبلغ تغییر کرده است. جمع جدید را بررسی کنید و دوباره دکمهٔ پرداخت را بزنید."); return; }
         try { localStorage.setItem(`unishop-paid-${result.orderId}`,JSON.stringify(lines)); } catch { /* Checkout can continue without cart storage. */ }
         window.location.assign(result.url);
+        setRedirecting(true);
       } catch { setError("ارتباط با فروشگاه برقرار نشد. دوباره تلاش کنید."); }
     });
   }
   return <form noValidate onSubmit={submit} className="split">
-    <fieldset className="panel flow checkout-fields" disabled={pending}>
+    <fieldset className="panel flow checkout-fields" disabled={busy}>
       <h2>اطلاعات گیرنده</h2>
       {saved.length > 0 && <label>آدرس ذخیره‌شده<select value={selected} onChange={event => {
         const id = event.target.value;
@@ -144,8 +158,11 @@ export function CheckoutScreen({ saved }: { saved: import("@/lib/profile").Saved
       {pricing && <p className="total"><span>مبلغ پرداخت</span><strong>{money(pricing.total)}</strong></p>}
       {error && <div className="notice error" role="alert">{error}</div>}
       {notice && <div className="notice" role="status">{notice}</div>}
-      {!pricing ? <button type="button" className="button primary" disabled={pending || !customer.province} onClick={calculate}>محاسبهٔ ارسال</button>
-        : <button className="button primary" disabled={pending} type="submit">تأیید و پرداخت <ArrowLeft size={17}/></button>}
+      {!pricing ? <PendingButton type="button" className="button primary" disabled={!customer.province} busy={busy}
+        pendingLabel="در حال محاسبهٔ ارسال…" onClick={calculate}>محاسبهٔ ارسال</PendingButton>
+        : <PendingButton className="button primary" busy={busy} type="submit" pendingLabel="در حال اتصال به درگاه…">
+          تأیید و پرداخت <ArrowLeft size={17}/>
+        </PendingButton>}
     </aside>
   </form>;
 }

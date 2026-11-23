@@ -2,6 +2,7 @@
 import { digits } from "@/lib/contact";
 import { useActionState } from "react";
 import { customerLogin } from "@/app/customer-actions";
+import { PendingSubmitButton } from "./pending-button";
 
 function validateLogin(event: React.FormEvent<HTMLFormElement>) {
       const field = event.currentTarget.querySelector<HTMLInputElement>("input:not([type=hidden])")!;
@@ -19,13 +20,15 @@ export function CustomerLoginForm() {
     <form noValidate onSubmit={validateLogin} action={action} className="flow">
       <input type="hidden" name="step" value="send"/>
       <label className="flow"><span>شماره موبایل <span aria-hidden="true">*</span></span><input name="mobile" type="tel" autoComplete="tel" dir="ltr" required maxLength={20} defaultValue={state.mobile} placeholder="09123456789"/></label>
-      <button className="button primary" disabled={pending}>{pending ? "در حال پردازش…" : state.id ? "ارسال دوباره / تغییر شماره" : "دریافت کد ورود"}</button>
+      <PendingSubmitButton className="button primary" disabled={pending} pendingLabel="در حال ارسال کد…">
+        {state.id ? "ارسال دوباره / تغییر شماره" : "دریافت کد ورود"}
+      </PendingSubmitButton>
     </form>
     {state.id && <form noValidate onSubmit={validateLogin} action={action} className="flow">
       <p>کد ورود برای <bdi>{state.mobile}</bdi> آماده شد. اعتبار کد دو دقیقه است؛ ارسال دوباره پس از یک دقیقه امکان‌پذیر است.</p>
       <input type="hidden" name="step" value="verify"/><input type="hidden" name="id" value={state.id}/>
       <label className="flow"><span>کد شش‌رقمی <span aria-hidden="true">*</span></span><input name="code" autoComplete="one-time-code" inputMode="numeric" dir="ltr" required minLength={6} maxLength={6}/></label>
-      <button className="button primary" disabled={pending}>تأیید و ورود</button>
+      <PendingSubmitButton className="button primary" disabled={pending} pendingLabel="در حال تأیید کد…">تأیید و ورود</PendingSubmitButton>
     </form>}
     {state.error && <p role="alert" className="danger">{state.error}</p>}
   </div>;

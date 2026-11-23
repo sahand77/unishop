@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Check, ChevronLeft, ChevronRight, CreditCard, Expand, PackageCheck, Play, Share2, ShoppingBag, Store, Truck, X } from "lucide-react";
@@ -8,6 +8,7 @@ import { fa, money, selectionKey, type Product } from "@/lib/shared";
 import type { ProductMedia } from "@/lib/product-media";
 import { useCart } from "./cart-context";
 import { ProductImage } from "./store-interactions";
+import { PendingButton } from "./pending-button";
 
 export function ProductDetail({ product, category, storeName }: { product: Product; category?: string; storeName: string }) {
   const router = useRouter();
@@ -16,6 +17,7 @@ export function ProductDetail({ product, category, storeName }: { product: Produ
   const [photo,setPhoto] = useState("");
   const [feedback,setFeedback] = useState("");
   const [shareMessage,setShareMessage] = useState("");
+  const [openingCheckout,startNavigation] = useTransition();
   const galleryDialog = useRef<HTMLDialogElement>(null);
 
   const active = product.offers.filter((offer) => offer.active);
@@ -47,14 +49,14 @@ export function ProductDetail({ product, category, storeName }: { product: Produ
   }
 
   function addItem(proceed: boolean) {
-    if (!current) return;
+    if (!current || openingCheckout) return;
     if (canAdd && (!proceed || !inCart)) {
       const variant = product.attributes.map((attribute) =>
         attribute.values.find((value) => value.id === current.options[attribute.id])?.name).join(" / ");
       add({ id:current.id,productId:product.id,title:product.title,price:current.price,
         image:media.get(current.image)?.kind === "image" ? current.image : product.image,variant,quantity:1 },stock);
     }
-    if (proceed) router.push("/checkout");
+    if (proceed) startNavigation(() => router.push("/checkout"));
     else setFeedback("به سبد خرید اضافه شد.");
   }
 
@@ -136,10 +138,11 @@ export function ProductDetail({ product, category, storeName }: { product: Produ
         <strong className="detail-price">{price}</strong>
       </div>
       <div className="pdp-actions">
-        <button type="button" className="button primary" disabled={!canAdd} onClick={() => addItem(false)}>
+        <button type="button" className="button primary" disabled={!canAdd || openingCheckout} onClick={() => addItem(false)}>
           <ShoppingBag size={19}/> {inCart > 0 && inCart >= Math.min(stock,99) && current ? "سقف تعداد در سبد" : "افزودن به سبد خرید"}
         </button>
-        <button type="button" className="button pdp-buy-now" disabled={!canBuy} onClick={() => addItem(true)}>خرید مستقیم</button>
+        <PendingButton type="button" className="button pdp-buy-now" disabled={!canBuy} busy={openingCheckout}
+          pendingLabel="در حال باز کردن تسویه…" onClick={() => addItem(true)}>خرید مستقیم</PendingButton>
       </div>
       {feedback && <div className="pdp-cart-feedback" role="status"><span><Check size={17}/>{feedback}</span>
         <Link href="/cart">مشاهدهٔ سبد <ArrowLeft size={15}/></Link></div>}

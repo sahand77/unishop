@@ -3,6 +3,7 @@ import { validateRecipient } from "./validate-recipient";
 import { changeAddress } from "@/app/profile-actions";
 import { provinces } from "@/lib/shared";
 import type { SavedAddress } from "@/lib/profile";
+import { PendingSubmitButton } from "./pending-button";
 
 export function AddressForm({ address }: { address?: SavedAddress }) {
   const r = address?.recipient;
@@ -16,7 +17,7 @@ export function AddressForm({ address }: { address?: SavedAddress }) {
       <label><span>کد پستی <span aria-hidden="true">*</span></span><input name="postalCode" required inputMode="numeric" dir="ltr" minLength={10} maxLength={10} defaultValue={r?.postalCode}/></label>
     </div>
     <label><span>نشانی کامل <span aria-hidden="true">*</span></span><textarea name="address" required minLength={8} maxLength={500} defaultValue={r?.address}/></label>
-    <button className="button primary">ذخیرهٔ آدرس</button>
-    {address && <button className="button" name="operation" value="delete" formNoValidate>حذف آدرس</button>}
+    <PendingSubmitButton className="button primary" name="operation" value="save" pendingLabel="در حال ذخیره…">ذخیرهٔ آدرس</PendingSubmitButton>
+    {address && <PendingSubmitButton className="button" name="operation" value="delete" formNoValidate pendingLabel="در حال حذف…">حذف آدرس</PendingSubmitButton>}
   </form>;
 }

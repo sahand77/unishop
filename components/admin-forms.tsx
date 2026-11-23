@@ -9,23 +9,24 @@ import { fa, money, selectionKey, type Attribute, type Category, type Offer, typ
 import type { ProductMedia } from "@/lib/product-media";
 import type { StoreFooterSettings } from "@/lib/store-settings";
 import { MediaEditor, MediaPreviewDialog, uploadMedia, type ShowMediaPreview } from "./media-editor";
+import { PendingButton, PendingSubmitButton } from "./pending-button";
 import { ProductImage } from "./store-interactions";
 
 export function LoginForm() {
-  const [error,action,pending] = useActionState(signIn,"");
+  const [error,action] = useActionState(signIn,"");
   return <form action={action} className="flow">
     <label>نام کاربری<input name="username" autoComplete="username" required dir="ltr"/></label>
     <label>رمز عبور<input name="password" type="password" autoComplete="current-password" required dir="ltr"/></label>
     {error && <p className="notice error" role="alert">{error}</p>}
-    <button className="button primary" disabled={pending}>ورود به پنل</button>
+    <PendingSubmitButton className="button primary" pendingLabel="در حال ورود…">ورود به پنل</PendingSubmitButton>
   </form>;
 }
 
 export function StoreNameForm({ name }: { name: string }) {
-  const [feedback, action, pending] = useActionState(putStoreName, { text: "" });
+  const [feedback, action] = useActionState(putStoreName, { text: "" });
   return <form action={action} className="flow">
     <label>نام فروشگاه<input key={name} name="name" dir="auto" required maxLength={60} defaultValue={name}/></label>
-    <button className="button primary" disabled={pending}>ذخیرهٔ تغییرات</button>
+    <PendingSubmitButton className="button primary" pendingLabel="در حال ذخیره…">ذخیرهٔ تغییرات</PendingSubmitButton>
     {feedback.text && <p className={feedback.error ? "notice error" : "notice"}
       role={feedback.error ? "alert" : "status"}>{feedback.text}</p>}
   </form>;
@@ -69,7 +70,7 @@ export function StoreFooterForm({ settings }: { settings: StoreFooterSettings })
         setLinks(items => [...items, { id, name: "", url: "", logo: "" }]);
       }}><Plus size={17}/> افزودن شبکهٔ اجتماعی</button>
     </fieldset>
-    <button className="button primary" disabled={pending || uploads > 0}>ذخیرهٔ فوتر</button>
+    <PendingSubmitButton className="button primary" pendingLabel="در حال ذخیره…" disabled={uploads > 0}>ذخیرهٔ فوتر</PendingSubmitButton>
     {feedback.text && <p className={feedback.error ? "notice error" : "notice"}
       role={feedback.error ? "alert" : "status"}>{feedback.text}</p>}
   </form>;
@@ -83,18 +84,20 @@ export function StoreEnamadForm({ embed }: { embed: string }) {
       spellCheck={false} aria-describedby="enamad-help" value={code} disabled={pending}
       onChange={event => setCode(event.target.value)}/></label>
     <p id="enamad-help">کد HTML دریافتی از اینماد را وارد کنید. برای حذف نماد از فوتر، فیلد را خالی و ذخیره کنید.</p>
-    <button className="button primary" disabled={pending}>ذخیرهٔ اینماد</button>
+    <PendingSubmitButton className="button primary" pendingLabel="در حال ذخیره…">ذخیرهٔ اینماد</PendingSubmitButton>
     {feedback.text && <p className={feedback.error ? "notice error" : "notice"}
       role={feedback.error ? "alert" : "status"}>{feedback.text}</p>}
   </form>;
 }
 
 export function CategoryForm({ category }: { category?: Category }) {
-  const [feedback,action,pending] = useActionState(putCategory,"");
+  const [feedback,action] = useActionState(putCategory,"");
   return <form action={action} className="flow">
     <input type="hidden" name="id" value={category?.id || ""}/>
     <label>{category ? "نام دسته" : "نام دستهٔ جدید"}<input key={category?.name} name="name" required maxLength={80} defaultValue={category?.name}/></label>
-    <button className={`button ${category ? "" : "primary"}`} disabled={pending}>{category ? "ذخیرهٔ تغییرات" : "افزودن دسته"}</button>
+    <PendingSubmitButton className={`button ${category ? "" : "primary"}`} pendingLabel="در حال ذخیره…">
+      {category ? "ذخیرهٔ تغییرات" : "افزودن دسته"}
+    </PendingSubmitButton>
     {feedback && <p className="notice" role="status">{feedback}</p>}
   </form>;
 }
@@ -126,7 +129,9 @@ function ImageField({ image,onChange,onBusy,label,onPreview }: {
         aria-haspopup="dialog" onClick={() => onPreview({kind:"image",url:image},label)}>
         <ProductImage className="upload-preview" src={image} title=""/>
       </button> : <ProductImage className="upload-preview" src={image} title={label}/>}
-      <button type="button" className="button" disabled={busy} onClick={() => input.current?.click()}><ImagePlus size={17}/>{busy ? "در حال بارگذاری" : "بارگذاری تصویر"}</button>
+      <PendingButton type="button" className="button" busy={busy} pendingLabel="در حال بارگذاری…" onClick={() => input.current?.click()}>
+        <ImagePlus size={17}/> بارگذاری تصویر
+      </PendingButton>
       {image && <button type="button" className="icon-link danger" aria-label="حذف تصویر" disabled={busy} onClick={() => onChange("")}><Trash2 size={18}/></button>}
     </div>
     <input type="file" ref={input} accept="image/jpeg,image/png,image/webp" hidden onChange={(event) => void upload(event.target.files?.[0])}/>
@@ -196,6 +201,7 @@ export function ProductForm({ initial,categories }: { initial?: Product; categor
   const [feedback,setFeedback] = useState<{ error?: string; success?: string }>({});
   const [busy,setBusy] = useState(0);
   const [pending,start] = useTransition();
+  const [submitting,setSubmitting] = useState<"draft" | "published">("draft");
   const [link,setLink] = useState("");
   const [importing,setImporting] = useState(false);
   const [importMessage,setImportMessage] = useState("");
@@ -262,9 +268,10 @@ export function ProductForm({ initial,categories }: { initial?: Product; categor
   }
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy) return;
+    if (pending || busy) return;
     const clicked = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
     const status = clicked?.value === "published" ? "published" : "draft";
+    setSubmitting(status);
     const offers = kind === "simple" ? [{
       ...simple,id:simple.id || crypto.randomUUID(),
       active:simple.price > 0,
@@ -292,7 +299,8 @@ export function ProductForm({ initial,categories }: { initial?: Product; categor
   return <div className="flow">
     {!id && <form className="panel flow" onSubmit={importProduct}>
       <label>لینک کالای باسلام<input type="url" required dir="ltr" value={link} onChange={event => setLink(event.target.value)} disabled={pending || busy > 0}/></label>
-      <button className="button" disabled={pending || busy > 0}>{importing ? "در حال دریافت…" : "پر کردن فرم از باسلام"}</button>
+      <PendingButton type="submit" className="button" busy={importing} pendingLabel="در حال دریافت از باسلام…"
+        disabled={pending || busy > 0}>پر کردن فرم از باسلام</PendingButton>
       {importMessage && <p role="status">{importMessage}</p>}
     </form>}
     <form onSubmit={submit} className="flow editor">
@@ -365,8 +373,12 @@ export function ProductForm({ initial,categories }: { initial?: Product; categor
     </>}
     {feedback.error && <p className="notice error" role="alert">{feedback.error}</p>}
     {feedback.success && <p className="notice" role="status">{feedback.success}</p>}
-    <div className="editor-buttons"><button type="submit" className="button" value="draft" disabled={pending || busy > 0}>ذخیرهٔ پیش‌نویس</button>
-      <button type="submit" className="button primary" value="published" disabled={pending || busy > 0}><Save size={17}/> انتشار کالا</button></div>
+    <div className="editor-buttons">
+      <PendingButton type="submit" className="button" value="draft" disabled={pending || busy > 0}
+        busy={pending && submitting === "draft"} pendingLabel="در حال ذخیره…">ذخیرهٔ پیش‌نویس</PendingButton>
+      <PendingButton type="submit" className="button primary" value="published" disabled={pending || busy > 0}
+        busy={pending && submitting === "published"} pendingLabel="در حال انتشار…"><Save size={17}/> انتشار کالا</PendingButton>
+    </div>
   </form>
   {preview && <MediaPreviewDialog {...preview} onClose={() => setPreview(null)}/>}
   </div>;
