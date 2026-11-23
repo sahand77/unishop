@@ -50,12 +50,33 @@ function hydrate(row: ProductRow): Product {
   };
 }
 
-export async function products(publicOnly = false, category = "", search = "") {
+const productsPerPage = 12;
+
+export function parseProductPage(value: string | string[] | undefined) {
+  if (typeof value !== "string" || !/^\d+$/.test(value)) return 1;
+  const page = Number(value);
+  return page > 0 && page <= Math.floor(Number.MAX_SAFE_INTEGER / productsPerPage) ? page : 1;
+}
+
+export async function productPage(page: number, publicOnly = false, category = "", search = "") {
   const { rows } = await db().query<ProductRow>(`${productSelect}
     WHERE (NOT $1::boolean OR p.status='published') AND ($2='' OR p.category_id=$2)
       AND ($3='' OR strpos(translate(lower(p.title),'كي','کی'),translate(lower($3),'كي','کی')) > 0)
-    ORDER BY p.updated DESC, p.sequence DESC`,[publicOnly,category,search]);
-  return rows.map(hydrate);
+    ORDER BY p.updated DESC, p.sequence DESC, p.id
+    LIMIT $4 OFFSET $5`,[publicOnly,category,search,productsPerPage + 1,(page - 1) * productsPerPage]);
+  return { items: rows.slice(0,productsPerPage).map(hydrate), hasNext: rows.length > productsPerPage };
+}
+
+export async function productCount() {
+  const { rows:[row] } = await db().query<{ count: string }>("SELECT count(*) FROM products");
+  return Number(row.count);
+}
+
+export async function featuredProduct() {
+  const { rows:[row] } = await db().query<Pick<Product,"id" | "title" | "image">>(`
+    SELECT id,title,image FROM products WHERE status='published' AND image<>''
+    ORDER BY (id='demo-sadena-67111427') DESC, updated DESC, sequence DESC, id LIMIT 1`);
+  return row;
 }
 
 export async function relatedProducts(id: string, categoryId: string) {

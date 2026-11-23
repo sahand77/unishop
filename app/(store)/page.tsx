@@ -4,14 +4,27 @@ import { publicUrl } from "@/lib/public-url";
 import Link from "next/link";
 import { ArrowDownLeft, ArrowLeft, PackageCheck, ShieldCheck, ShoppingBag, Truck } from "lucide-react";
 import { ProductCards } from "@/components/product-cards";
-import { categories,products } from "@/lib/catalog";
+import { ProductPagination } from "@/components/product-pagination";
+import { categories,featuredProduct,parseProductPage,productPage } from "@/lib/catalog";
 import { storeName } from "@/lib/store-settings";
 
 export const dynamic = "force-dynamic";
 
-type PageProps = { searchParams: Promise<{ category?: string | string[]; q?: string | string[] }> };
-const loadItems = cache((category: string, search: string) => products(true,category,search));
+type PageProps = { searchParams: Promise<{ category?: string | string[]; q?: string | string[]; page?: string | string[] }> };
+const loadItems = cache(async (page: number, category: string, search: string) => {
+  const result = await productPage(page,true,category,search);
+  if (page > 1 && !result.items.length) notFound();
+  return result;
+});
 const loadCategories = cache(categories);
+
+function catalogUrl(category: string, search: string, page = 1) {
+  const query = new URLSearchParams();
+  if (category) query.set("category",category);
+  if (search) query.set("q",search);
+  if (page > 1) query.set("page",String(page));
+  return query.size ? `/?${query}` : "/";
+}
 
 async function catalogContext({ searchParams }: PageProps) {
   const params = await searchParams;
@@ -20,31 +33,30 @@ async function catalogContext({ searchParams }: PageProps) {
   const groups = await loadCategories();
   const group = groups.find(group => group.id === category);
   if (category && !group) notFound();
-  return { category, search, groups, group };
+  return { category, search, page: parseProductPage(params.page), groups, group };
 }
 
 export async function generateMetadata(props: PageProps) {
-  const { category, search, group } = await catalogContext(props);
+  const { category, search, page, group } = await catalogContext(props);
+  if (page > 1) await loadItems(page,category,search);
   if (search) return { robots: { index: false }, title: `نتایج جست‌وجوی «${search}»` };
-  if (!group) return { alternates: { canonical: publicUrl("/") } };
-  const items = await loadItems(category,search);
-  return { alternates: { canonical: publicUrl(`/?category=${encodeURIComponent(category)}`) },
+  const alternates = { canonical: publicUrl(catalogUrl(category,search,page)) };
+  if (!group) return { alternates };
+  const { items } = await loadItems(page,category,search);
+  return { alternates,
     robots: items.length ? undefined : { index: false }, title: group.name, description: `مشاهدهٔ کالاهای دستهٔ ${group.name} و مقایسهٔ مشخصات و قیمت آن‌ها در ${await storeName()}.` };
 }
 
 export default async function Home(props: PageProps) {
-  const { category, search, groups } = await catalogContext(props);
-  const items = await loadItems(category,search);
-  const Heading = category || search ? "h1" : "h2";
-  function filterLink(id: string) {
-    const query = new URLSearchParams();
-    if (id) query.set("category",id);
-    if (search) query.set("q",search);
-    return query.size ? `/?${query}#products` : "/#products";
-  }
-  const featured = items.find((item) => item.id === "demo-sadena-67111427" && item.image) ?? items.find((item) => item.image);
+  const { category, search, page, groups, group } = await catalogContext(props);
+  const showIntro = !category && !search && page === 1;
+  const [{ items, hasNext },featured] = await Promise.all([
+    loadItems(page,category,search),
+    showIntro ? featuredProduct() : undefined,
+  ]);
+  const Heading = showIntro ? "h2" : "h1";
   return <main className="wrap shop-main">
-    {!category && !search && <section className={`hero ${featured ? "" : "hero-no-photo"}`}>
+    {showIntro && <section className={`hero ${featured ? "" : "hero-no-photo"}`}>
       <div className="hero-copy">
         <span className="hero-label"><span className="hero-label-dot"/><span>فروشگاه آنلاین <bdi>{await storeName()}</bdi></span></span>
         <h1>خرید برای<br/> زندگی هر روز<span>.</span></h1>
@@ -56,22 +68,23 @@ export default async function Home(props: PageProps) {
         <span className="hero-photo-link"><ShoppingBag size={17}/> {featured.title} <ArrowLeft size={16}/></span>
       </Link>}
     </section>}
-    {!category && !search && <section className="benefits" aria-label="امکانات فروشگاه">
+    {showIntro && <section className="benefits" aria-label="امکانات فروشگاه">
       <div><Truck size={23}/><span>محاسبهٔ هزینهٔ ارسال</span></div>
       <div><ShieldCheck size={23}/><span>پرداخت با زرین‌پال</span></div>
       <div><PackageCheck size={23}/><span>ثبت سفارش بدون حساب</span></div>
     </section>}
     <section id="products" className="catalog">
-      <div className="section-head"><div><Heading>{search ? `نتایج جست‌وجوی «${search}»` : groups.find((group) => group.id === category)?.name || "محصولات فروشگاه"}</Heading></div>
+      <div className="section-head"><div><Heading>{search ? `نتایج جست‌وجوی «${search}»` : group?.name || "محصولات فروشگاه"}</Heading></div>
         <div className="filter" aria-label="دسته‌بندی محصولات">
-          <Link href={filterLink("")} className={!category ? "selected" : ""}>همه</Link>
+          <Link href={`${catalogUrl("",search)}#products`} className={!category ? "selected" : ""}>همه</Link>
           {groups.map((group) => <Link className={category === group.id ? "selected" : ""} key={group.id}
-            href={filterLink(group.id)}>{group.name}</Link>)}
+            href={`${catalogUrl(group.id,search)}#products`}>{group.name}</Link>)}
         </div>
       </div>
       {items.length ? <ProductCards items={items} groups={groups}/> : <p className="panel empty">
         {search ? "کالایی برای این جست‌وجو پیدا نشد." : "در این بخش هنوز کالایی منتشر نشده است."}
       </p>}
+      <ProductPagination page={page} hasNext={hasNext} href={(target) => `${catalogUrl(category,search,target)}#products`}/>
     </section>
   </main>;
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
-import { categories, product, saveCategory, saveProduct } from "../lib/catalog";
+import { categories, product, productPage, saveCategory, saveProduct } from "../lib/catalog";
 import { cancelOrder, order, quote, reserveOrder } from "../lib/checkout";
 import { Pool } from "pg";
 import { addresses, customerOrders } from "../lib/profile";
@@ -42,6 +42,31 @@ async function inventory(stock = 1, categoryId = "") {
   const id = await saveProduct({ ...baseProduct,categoryId,offers:[offer] });
   return { id,offer,lines:[{ id:offer.id,quantity:1 }] };
 }
+
+test("صفحه‌بندی کالا پس از اعمال فیلترهای فروشگاه انجام می‌شود", async () => {
+  const category = randomUUID();
+  await db().query("INSERT INTO categories (id,name) VALUES ($1,$2)",[category,"دستهٔ صفحه‌بندی"]);
+  const result = await db().query<{ id: string }>(`
+    INSERT INTO products (id,title,description,category_id,kind,status,image,attributes,updated)
+    SELECT $1 || '-' || n, CASE WHEN n=15 THEN 'عنوان دیگر' ELSE 'كالای صفحه‌بندی' END,
+      '', CASE WHEN n=16 THEN NULL ELSE $1 END, 'simple',
+      CASE WHEN n=14 THEN 'draft' ELSE 'published' END, '', '[]', n
+    FROM generate_series(1,16) AS series(n)
+    RETURNING id`,[category]);
+  try {
+    const first = await productPage(1,true,category,"کالای");
+    const second = await productPage(2,true,category,"کالای");
+    assert.equal(first.hasNext,true);
+    assert.deepEqual(first.items.map(item => item.id),Array.from({ length:12 },(_,i) => `${category}-${13 - i}`));
+    assert.deepEqual(second.items.map(item => item.id),[`${category}-1`]);
+    assert.equal(second.hasNext,false);
+    assert.deepEqual(await productPage(3,true,category,"کالای"),{ items:[],hasNext:false });
+    assert.equal((await productPage(1,false,category,"کالای")).items[0].status,"draft");
+  } finally {
+    await db().query("DELETE FROM products WHERE id=ANY($1::text[])",[result.rows.map(row => row.id)]);
+    await db().query("DELETE FROM categories WHERE id=$1",[category]);
+  }
+});
 
 test("قوانین ارسال هم‌زمان و مرزهای بازه", async () => {
   await saveCategory("","دیجیتال");
