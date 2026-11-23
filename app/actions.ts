@@ -11,7 +11,7 @@ import { cancelOrder, customerSchema, order, quote, reserveOrder } from "@/lib/c
 import { db } from "@/lib/db";
 import { gatewayLink, initiate, paymentMode, recheck, resumePayment, verify, validateGateway } from "@/lib/payment";
 import { saveRule } from "@/lib/shipping";
-import { saveStoreName, storeNameTag } from "@/lib/store-settings";
+import { saveStoreFooter, saveStoreName, storeFooterSchema, storeFooterTag, storeNameTag } from "@/lib/store-settings";
 import { customerPaymentLabels, type Quote } from "@/lib/shared";
 
 function message(error: unknown) {
@@ -43,6 +43,30 @@ export async function putStoreName(_previous: { text: string; error?: boolean },
   }
   updateTag(storeNameTag);
   return { text: "نام فروشگاه ذخیره شد." };
+}
+
+export async function putStoreFooter(_previous: { text: string; error?: boolean }, form: FormData) {
+  await requireAdmin();
+  const names = form.getAll("socialName");
+  const urls = form.getAll("socialUrl");
+  const logos = form.getAll("socialLogo");
+  if (names.length !== urls.length || names.length !== logos.length) {
+    return { text: "اطلاعات شبکه‌های اجتماعی کامل نیست.", error: true };
+  }
+  const input = storeFooterSchema.safeParse({
+    address: form.get("address"),
+    phone: form.get("phone"),
+    socialLinks: names.map((name, index) => ({ name, url: urls[index], logo: logos[index] })),
+  });
+  if (!input.success) return { text: input.error.issues[0].message, error: true };
+
+  try {
+    await saveStoreFooter(input.data);
+  } catch {
+    return { text: "اطلاعات فوتر ذخیره نشد. دوباره تلاش کنید.", error: true };
+  }
+  updateTag(storeFooterTag);
+  return { text: "اطلاعات فوتر ذخیره شد." };
 }
 
 export async function putCategory(_previous: string, form: FormData) {

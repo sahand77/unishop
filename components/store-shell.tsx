@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { Box, Settings2, ShoppingBag } from "lucide-react";
+import { Link2, MapPin, Phone, ShoppingBag } from "lucide-react";
 import type { Category } from "@/lib/shared";
 import { CartLink, StoreCategories, StoreSearch } from "./store-interactions";
 import { currentCustomer } from "@/lib/customer-auth";
-import { storeName } from "@/lib/store-settings";
+import { storeFooter, storeName, storePhoneHref } from "@/lib/store-settings";
 
 export function Brand({ name }: { name: string }) {
   const accentStart = name.match(/[^\s\u200c]+[\s\u200c]*$/u)?.index ?? 0;
@@ -25,9 +25,25 @@ export async function StoreHeader({ groups }: { groups: Category[] }) {
 }
 
 export async function StoreFooter() {
-  const name = await storeName();
+  const [name, { address, phone, socialLinks }] = await Promise.all([storeName(), storeFooter()]);
   return <footer className="store-footer"><div className="wrap footer-inner">
     <div><Brand name={name}/><p>فروشگاه آنلاین <bdi>{name}</bdi></p></div>
-    <div className="footer-links"><Link href="/#products"><Box size={17}/> محصولات</Link><Link href="/admin"><Settings2 size={17}/> پنل مدیریت</Link></div>
+    {address && <section className="footer-section">
+      <h2><MapPin size={18} aria-hidden="true"/> آدرس فروشگاه</h2>
+      <address dir="auto">{address}</address>
+    </section>}
+    {phone && <section className="footer-section">
+      <h2><Phone size={18} aria-hidden="true"/> شمارهٔ تماس</h2>
+      <a href={storePhoneHref(phone)}><bdi dir="ltr">{phone}</bdi></a>
+    </section>}
+    {socialLinks.length > 0 && <section className="footer-section">
+      <h2>شبکه‌های اجتماعی</h2>
+      <ul className="footer-social">{socialLinks.map(({ name, url, logo }, index) => <li key={index}>
+        <a href={url}>
+          {logo ? <img src={logo} width={22} height={22} alt=""/> : <Link2 size={20} aria-hidden="true"/>}
+          <bdi>{name}</bdi>
+        </a>
+      </li>)}</ul>
+    </section>}
   </div></footer>;
 }

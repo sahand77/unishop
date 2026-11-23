@@ -3,9 +3,10 @@ import { AmountInput } from "./amount-input";
 import { useActionState, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ImagePlus, Plus, Save, Sparkles, Trash2 } from "lucide-react";
-import { previewBasalam, putCategory, putProduct, putStoreName, signIn } from "@/app/actions";
+import { previewBasalam, putCategory, putProduct, putStoreFooter, putStoreName, signIn } from "@/app/actions";
 import { fa, money, selectionKey, type Attribute, type Category, type Offer, type Product } from "@/lib/shared";
 import type { ProductMedia } from "@/lib/product-media";
+import type { StoreFooterSettings } from "@/lib/store-settings";
 import { MediaEditor, uploadMedia } from "./media-editor";
 import { ProductImage } from "./store-interactions";
 
@@ -24,6 +25,50 @@ export function StoreNameForm({ name }: { name: string }) {
   return <form action={action} className="flow">
     <label>نام فروشگاه<input key={name} name="name" dir="auto" required maxLength={60} defaultValue={name}/></label>
     <button className="button primary" disabled={pending}>ذخیرهٔ تغییرات</button>
+    {feedback.text && <p className={feedback.error ? "notice error" : "notice"}
+      role={feedback.error ? "alert" : "status"}>{feedback.text}</p>}
+  </form>;
+}
+
+export function StoreFooterForm({ settings }: { settings: StoreFooterSettings }) {
+  const [feedback, action, pending] = useActionState(putStoreFooter, { text: "" });
+  const [address, setAddress] = useState(settings.address);
+  const [phone, setPhone] = useState(settings.phone);
+  const [links, setLinks] = useState(() => settings.socialLinks.map((link, id) => ({ ...link, id })));
+  const nextId = useRef(links.length);
+  const [uploads, setUploads] = useState(0);
+
+  function updateLink(id: number, patch: Partial<StoreFooterSettings["socialLinks"][number]>) {
+    setLinks(items => items.map(item => item.id === id ? { ...item, ...patch } : item));
+  }
+
+  return <form action={action} className="flow">
+    <fieldset className="flow" disabled={pending}>
+      <label>آدرس فروشگاه<textarea name="address" rows={3} maxLength={500} dir="auto" value={address}
+        onChange={event => setAddress(event.target.value)}/></label>
+      <label>شمارهٔ تماس<input name="phone" type="tel" maxLength={40} dir="ltr" value={phone}
+        onChange={event => setPhone(event.target.value)}/></label>
+      <h3>شبکه‌های اجتماعی</h3>
+      {links.map((link, index) => <fieldset className="flow footer-social-editor" key={link.id}>
+        <legend>شبکهٔ اجتماعی {fa(index + 1)}</legend>
+        <div className="form-grid">
+          <label>نام شبکه<input name="socialName" required maxLength={60} dir="auto" value={link.name}
+            onChange={event => updateLink(link.id, { name: event.target.value })}/></label>
+          <label>لینک صفحه<input name="socialUrl" type="url" required maxLength={2048} dir="ltr" value={link.url}
+            onChange={event => updateLink(link.id, { url: event.target.value })}/></label>
+        </div>
+        <input type="hidden" name="socialLogo" value={link.logo}/>
+        <ImageField label="لوگوی شبکه" image={link.logo} onChange={logo => updateLink(link.id, { logo })}
+          onBusy={busy => setUploads(count => count + (busy ? 1 : -1))}/>
+        <button type="button" className="button danger" disabled={uploads > 0}
+          onClick={() => setLinks(items => items.filter(item => item.id !== link.id))}><Trash2 size={17}/> حذف شبکه</button>
+      </fieldset>)}
+      <button type="button" className="button" disabled={links.length >= 12} onClick={() => {
+        const id = nextId.current++;
+        setLinks(items => [...items, { id, name: "", url: "", logo: "" }]);
+      }}><Plus size={17}/> افزودن شبکهٔ اجتماعی</button>
+    </fieldset>
+    <button className="button primary" disabled={pending || uploads > 0}>ذخیرهٔ فوتر</button>
     {feedback.text && <p className={feedback.error ? "notice error" : "notice"}
       role={feedback.error ? "alert" : "status"}>{feedback.text}</p>}
   </form>;
