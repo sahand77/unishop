@@ -3,7 +3,8 @@ import { AmountInput } from "./amount-input";
 import { useActionState, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ImagePlus, Plus, Save, Sparkles, Trash2 } from "lucide-react";
-import { previewBasalam, putCategory, putProduct, putStoreFooter, putStoreName, signIn } from "@/app/actions";
+import { previewBasalam, putCategory, putProduct, putStoreEnamad, putStoreFooter, putStoreName, signIn } from "@/app/actions";
+import { enamadCodeLimit } from "@/lib/enamad";
 import { fa, money, selectionKey, type Attribute, type Category, type Offer, type Product } from "@/lib/shared";
 import type { ProductMedia } from "@/lib/product-media";
 import type { StoreFooterSettings } from "@/lib/store-settings";
@@ -69,6 +70,20 @@ export function StoreFooterForm({ settings }: { settings: StoreFooterSettings })
       }}><Plus size={17}/> افزودن شبکهٔ اجتماعی</button>
     </fieldset>
     <button className="button primary" disabled={pending || uploads > 0}>ذخیرهٔ فوتر</button>
+    {feedback.text && <p className={feedback.error ? "notice error" : "notice"}
+      role={feedback.error ? "alert" : "status"}>{feedback.text}</p>}
+  </form>;
+}
+
+export function StoreEnamadForm({ embed }: { embed: string }) {
+  const [feedback, action, pending] = useActionState(putStoreEnamad, { text: "" });
+  const [code, setCode] = useState(embed);
+  return <form action={action} className="flow">
+    <label>کد اینماد<textarea name="enamad" rows={5} maxLength={enamadCodeLimit} dir="ltr"
+      spellCheck={false} aria-describedby="enamad-help" value={code} disabled={pending}
+      onChange={event => setCode(event.target.value)}/></label>
+    <p id="enamad-help">کد HTML دریافتی از اینماد را وارد کنید. برای حذف نماد از فوتر، فیلد را خالی و ذخیره کنید.</p>
+    <button className="button primary" disabled={pending}>ذخیرهٔ اینماد</button>
     {feedback.text && <p className={feedback.error ? "notice error" : "notice"}
       role={feedback.error ? "alert" : "status"}>{feedback.text}</p>}
   </form>;

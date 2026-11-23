@@ -9,9 +9,10 @@ import { login, logout, requireAdmin } from "@/lib/auth";
 import { saveCategory, saveProduct } from "@/lib/catalog";
 import { cancelOrder, customerSchema, order, quote, reserveOrder } from "@/lib/checkout";
 import { db } from "@/lib/db";
+import { parseEnamadEmbed } from "@/lib/enamad";
 import { gatewayLink, initiate, paymentMode, recheck, resumePayment, verify, validateGateway } from "@/lib/payment";
 import { saveRule } from "@/lib/shipping";
-import { saveStoreFooter, saveStoreName, storeFooterSchema, storeFooterTag, storeNameTag } from "@/lib/store-settings";
+import { saveStoreEnamad, saveStoreFooter, saveStoreName, storeEnamadTag, storeFooterSchema, storeFooterTag, storeNameTag } from "@/lib/store-settings";
 import { customerPaymentLabels, type Quote } from "@/lib/shared";
 
 function message(error: unknown) {
@@ -67,6 +68,21 @@ export async function putStoreFooter(_previous: { text: string; error?: boolean 
   }
   updateTag(storeFooterTag);
   return { text: "اطلاعات فوتر ذخیره شد." };
+}
+
+export async function putStoreEnamad(_previous: { text: string; error?: boolean }, form: FormData) {
+  await requireAdmin();
+  const embed = form.get("enamad");
+  if (typeof embed !== "string" || (embed.trim() && !parseEnamadEmbed(embed))) {
+    return { text: "کد کامل اینماد را که شامل لینک و تصویر نماد است وارد کنید.", error: true };
+  }
+  try {
+    await saveStoreEnamad(embed.trim());
+  } catch {
+    return { text: "کد اینماد ذخیره نشد. دوباره تلاش کنید.", error: true };
+  }
+  updateTag(storeEnamadTag);
+  return { text: "تنظیمات اینماد ذخیره شد." };
 }
 
 export async function putCategory(_previous: string, form: FormData) {

@@ -3,7 +3,8 @@ import { Link2, MapPin, Phone, ShoppingBag } from "lucide-react";
 import type { Category } from "@/lib/shared";
 import { CartLink, StoreCategories, StoreSearch } from "./store-interactions";
 import { currentCustomer } from "@/lib/customer-auth";
-import { storeFooter, storeName, storePhoneHref } from "@/lib/store-settings";
+import { parseEnamadEmbed } from "@/lib/enamad";
+import { storeEnamad, storeFooter, storeName, storePhoneHref } from "@/lib/store-settings";
 
 export function Brand({ name }: { name: string }) {
   const accentStart = name.match(/[^\s\u200c]+[\s\u200c]*$/u)?.index ?? 0;
@@ -25,7 +26,8 @@ export async function StoreHeader({ groups }: { groups: Category[] }) {
 }
 
 export async function StoreFooter() {
-  const [name, { address, phone, socialLinks }] = await Promise.all([storeName(), storeFooter()]);
+  const [name, { address, phone, socialLinks }, embed] = await Promise.all([storeName(), storeFooter(), storeEnamad()]);
+  const enamad = parseEnamadEmbed(embed);
   return <footer className="store-footer"><div className="wrap footer-inner">
     <div><Brand name={name}/><p>فروشگاه آنلاین <bdi>{name}</bdi></p></div>
     {address && <section className="footer-section">
@@ -45,5 +47,11 @@ export async function StoreFooter() {
         </a>
       </li>)}</ul>
     </section>}
+    {enamad && <div className="footer-section">
+      <a href={enamad.href} target="_blank" rel="noopener" referrerPolicy="origin">
+        <img src={enamad.src} alt="نماد اعتماد الکترونیکی" width={100} height={100} loading="lazy"
+          referrerPolicy="origin" {...{ code: enamad.code }}/>
+      </a>
+    </div>}
   </div></footer>;
 }

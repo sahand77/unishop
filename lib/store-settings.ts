@@ -61,3 +61,21 @@ export async function saveStoreFooter(footer: StoreFooterSettings) {
     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
   `, [JSON.stringify(footer)]);
 }
+
+export const storeEnamadTag = "store-enamad";
+
+async function readStoreEnamad() {
+  const { rows: [setting] } = await db().query<{ value: string }>(
+    "SELECT value FROM store_settings WHERE key = 'store_enamad'",
+  );
+  return setting?.value ?? "";
+}
+
+export const storeEnamad = cache(unstable_cache(readStoreEnamad, [storeEnamadTag], { tags: [storeEnamadTag] }));
+
+export async function saveStoreEnamad(embed: string) {
+  await db().query(`
+    INSERT INTO store_settings (key, value) VALUES ('store_enamad', $1)
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+  `, [embed]);
+}
