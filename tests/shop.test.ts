@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 import { categories, product, productPage, saveCategory, saveProduct } from "../lib/catalog";
+import { categoryOptions, categoryPath, categoryTree } from "../lib/category-tree";
 import { cancelOrder, order, quote, reserveOrder } from "../lib/checkout";
 import { Pool } from "pg";
 import { addresses, customerOrders } from "../lib/profile";
@@ -65,6 +66,44 @@ test("صفحه‌بندی کالا پس از اعمال فیلترهای فرو�
   } finally {
     await db().query("DELETE FROM products WHERE id=ANY($1::text[])",[result.rows.map(row => row.id)]);
     await db().query("DELETE FROM categories WHERE id=$1",[category]);
+  }
+});
+
+test("دسته‌ها در چند سطح ساخته و جابه‌جا می‌شوند و کالاهای زیردسته در دستهٔ والد دیده می‌شوند", async () => {
+  const names = ["دستهٔ درختی", "شاخهٔ میانی", "زیردستهٔ نهایی", "شاخهٔ مستقل"];
+  const ids: string[] = [];
+  const productId = randomUUID();
+  async function create(name: string, parentId?: string) {
+    await saveCategory("",name,parentId);
+    const category = (await categories()).find(group => group.name === name)!;
+    ids.push(category.id);
+    return category;
+  }
+  try {
+    const root = await create(names[0]);
+    const branch = await create(names[1],root.id);
+    const leaf = await create(names[2],branch.id);
+    const other = await create(names[3]);
+    const groups = await categories();
+    assert.equal(root.parentId,null);
+    assert.equal(categoryTree(groups).find(group => group.id === root.id)?.children[0].children[0].id,leaf.id);
+    assert.deepEqual(categoryPath(groups,leaf.id).map(group => group.id),[root.id,branch.id,leaf.id]);
+    assert.equal(categoryOptions(groups,branch.id).some(option => option.id === leaf.id),false);
+    await assert.rejects(() => saveCategory(root.id,root.name,leaf.id),/بیرون این شاخه/);
+    await assert.rejects(() => saveCategory(root.id,root.name,root.id),/بیرون این شاخه/);
+    await assert.rejects(() => saveCategory("","دسته با والد نامعتبر",randomUUID()),/دستهٔ والد پیدا نشد/);
+    await db().query(`INSERT INTO products (id,title,description,category_id,kind,status,image,attributes,updated)
+      VALUES ($1,'کالای درختی','',$2,'simple','published','','[]',0)`,[productId,leaf.id]);
+    assert.deepEqual((await productPage(1,true,root.id)).items.map(item => item.id),[productId]);
+    assert.equal((await productPage(1,true,other.id)).items.length,0);
+    await saveCategory(branch.id,branch.name,other.id);
+    assert.equal((await productPage(1,true,root.id)).items.length,0);
+    assert.deepEqual((await productPage(1,true,other.id)).items.map(item => item.id),[productId]);
+    await saveCategory(branch.id,branch.name,"");
+    assert.equal((await categories()).find(group => group.id === branch.id)?.parentId,null);
+  } finally {
+    await db().query("DELETE FROM products WHERE id=$1",[productId]);
+    await db().query("DELETE FROM categories WHERE id=ANY($1::text[])",[ids]);
   }
 });
 

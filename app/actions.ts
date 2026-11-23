@@ -85,15 +85,15 @@ export async function putStoreEnamad(_previous: { text: string; error?: boolean 
   return { text: "تنظیمات اینماد ذخیره شد." };
 }
 
-export async function putCategory(_previous: string, form: FormData) {
+export async function putCategory(_previous: { text: string; error?: boolean }, form: FormData) {
   await requireAdmin();
   try {
-    await saveCategory(String(form.get("id") || ""),String(form.get("name") || ""));
+    await saveCategory(String(form.get("id") || ""),String(form.get("name") || ""),String(form.get("parentId") || ""));
   } catch (error) {
-    return message(error);
+    return { text:message(error), error:true };
   }
   revalidatePath("/", "layout");
-  return "دسته ذخیره شد.";
+  return { text:"دسته ذخیره شد." };
 }
 
 export async function previewBasalam(link: string) {

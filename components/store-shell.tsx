@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { Link2, MapPin, Phone, ShoppingBag } from "lucide-react";
 import type { Category } from "@/lib/shared";
-import { CartLink, StoreCategories, StoreSearch } from "./store-interactions";
+import { CartLink, StoreSearch } from "./store-interactions";
+import { StoreCategories } from "./store-categories";
 import { currentCustomer } from "@/lib/customer-auth";
 import { parseEnamadEmbed } from "@/lib/enamad";
 import { storeEnamad, storeFooter, storeName, storePhoneHref } from "@/lib/store-settings";

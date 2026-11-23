@@ -6,6 +6,7 @@ import { ArrowDownLeft, ArrowLeft, PackageCheck, ShieldCheck, ShoppingBag, Truck
 import { ProductCards } from "@/components/product-cards";
 import { ProductPagination } from "@/components/product-pagination";
 import { categories,featuredProduct,parseProductPage,productPage } from "@/lib/catalog";
+import { categoryPath } from "@/lib/category-tree";
 import { storeName } from "@/lib/store-settings";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +50,8 @@ export async function generateMetadata(props: PageProps) {
 
 export default async function Home(props: PageProps) {
   const { category, search, page, groups, group } = await catalogContext(props);
+  const path = group ? categoryPath(groups,group.id) : [];
+  const children = groups.filter(item => item.parentId === (group?.id ?? null));
   const showIntro = !category && !search && page === 1;
   const [{ items, hasNext },featured] = await Promise.all([
     loadItems(page,category,search),
@@ -74,12 +77,16 @@ export default async function Home(props: PageProps) {
       <div><PackageCheck size={23}/><span>ثبت سفارش بدون حساب</span></div>
     </section>}
     <section id="products" className="catalog">
+      {path.length > 0 && <nav className="breadcrumbs" aria-label="مسیر دسته‌بندی">
+        <Link href={`${catalogUrl("",search)}#products`}>همهٔ کالاها</Link>
+        {path.slice(0,-1).map(item => <Link key={item.id} href={`${catalogUrl(item.id,search)}#products`}>{item.name}</Link>)}
+        <span aria-current="page">{group?.name}</span>
+      </nav>}
       <div className="section-head"><div><Heading>{search ? `نتایج جست‌وجوی «${search}»` : group?.name || "محصولات فروشگاه"}</Heading></div>
-        <div className="filter" aria-label="دسته‌بندی محصولات">
-          <Link href={`${catalogUrl("",search)}#products`} className={!category ? "selected" : ""}>همه</Link>
-          {groups.map((group) => <Link className={category === group.id ? "selected" : ""} key={group.id}
-            href={`${catalogUrl(group.id,search)}#products`}>{group.name}</Link>)}
-        </div>
+        {children.length > 0 && <nav className="filter" aria-label={group ? "زیردسته‌ها" : "دسته‌بندی محصولات"}>
+          <Link href={`${catalogUrl(category,search)}#products`} className="selected" aria-current="true">{group ? "همهٔ این دسته" : "همه"}</Link>
+          {children.map(child => <Link key={child.id} href={`${catalogUrl(child.id,search)}#products`}>{child.name}</Link>)}
+        </nav>}
       </div>
       {items.length ? <ProductCards items={items} groups={groups}/> : <p className="panel empty">
         {search ? "کالایی برای این جست‌وجو پیدا نشد." : "در این بخش هنوز کالایی منتشر نشده است."}

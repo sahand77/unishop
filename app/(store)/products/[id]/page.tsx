@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { ProductDetail } from "@/components/product-detail";
 import { ProductCards } from "@/components/product-cards";
 import { categories,product,relatedProducts,variationName } from "@/lib/catalog";
+import { categoryPath } from "@/lib/category-tree";
 import { storeName } from "@/lib/store-settings";
 
 type PageProps = { params: Promise<{ id: string }> };
@@ -29,7 +30,8 @@ export async function generateMetadata({ params }: PageProps) {
 export default async function ProductPage({ params }: PageProps) {
   const item = await publishedProduct((await params).id);
   const [groups,related] = await Promise.all([categories(),relatedProducts(item.id,item.categoryId)]);
-  const category = groups.find((group) => group.id === item.categoryId);
+  const path = categoryPath(groups,item.categoryId);
+  const category = path.at(-1);
   const offers = item.offers.filter((offer) => offer.active).map((offer) => ({
     ...offer, stock: offer.stock-offer.reserved, reserved: 0, sku: "",
   }));
@@ -50,7 +52,8 @@ export default async function ProductPage({ params }: PageProps) {
   return <main className="wrap product-page flow">
     <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData).replace(/</g,"\\u003c") }}/>
     <nav className="breadcrumbs" aria-label="مسیر صفحه"><Link href="/">فروشگاه</Link>
-      {category && <Link href={`/?category=${category.id}#products`}>{category.name}</Link>}<span>{item.title}</span>
+      {path.map(group => <Link key={group.id} href={`/?category=${encodeURIComponent(group.id)}#products`}>{group.name}</Link>)}
+      <span aria-current="page">{item.title}</span>
     </nav>
     <ProductDetail key={item.id} product={{ ...item, offers }} category={category?.name} storeName={await storeName()}/>
     {related.length > 0 && <section className="pdp-related" aria-labelledby="related-products">

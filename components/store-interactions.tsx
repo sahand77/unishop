@@ -1,11 +1,11 @@
 "use client";
 import { validateRecipient } from "./validate-recipient";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ArrowLeft, ImageOff, Menu, Minus, Search, Plus, ShoppingBag, Trash2 } from "lucide-react";
+import { ArrowLeft, ImageOff, Minus, Search, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { checkout, getQuote } from "@/app/actions";
-import { fa, money, provinces, type Category, type Quote } from "@/lib/shared";
+import { fa, money, provinces, type Quote } from "@/lib/shared";
 import { useCart } from "./cart-context";
 import { PendingButton } from "./pending-button";
 
@@ -21,21 +21,6 @@ export function StoreSearch({ storeName }: { storeName: string }) {
     <input key={search} defaultValue={search} type="search" name="q" aria-label="جست‌وجوی کالا"
       placeholder={`جست‌وجو در ${storeName}`} maxLength={100}/>
   </form>;
-}
-
-export function StoreCategories({ groups }: { groups: Category[] }) {
-  const menu = useRef<HTMLDetailsElement>(null);
-  function close() {
-    if (menu.current) menu.current.open = false;
-  }
-
-  return <details ref={menu} className="store-categories">
-    <summary><Menu size={19}/> دسته‌بندی‌ها</summary>
-    <nav aria-label="دسته‌بندی‌های فروشگاه">
-      <Link href="/#products" onClick={close}>همهٔ کالاها</Link>
-      {groups.map((group) => <Link key={group.id} href={`/?category=${group.id}#products`} onClick={close}>{group.name}</Link>)}
-    </nav>
-  </details>;
 }
 
 export function CartLink() {

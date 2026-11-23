@@ -3,6 +3,7 @@ import { AmountInput } from "./amount-input";
 import { useState, useTransition } from "react";
 import { Save, Trash2 } from "lucide-react";
 import { putRule, removeRule } from "@/app/actions";
+import { categoryOptions } from "@/lib/category-tree";
 import { fa, provinces, type Category, type ShippingRule } from "@/lib/shared";
 import { PendingButton } from "./pending-button";
 
@@ -53,8 +54,8 @@ export function RuleForm({ rule,categories }: { rule?: ShippingRule; categories:
         <input type="checkbox" checked={value.provinces.includes(province)} onChange={() => toggle("provinces",province)}/>{province}</label>)}</div>
     </details>
     <details className="variant"><summary>دسته‌بندی‌ها {value.categories.length > 0 && `(${fa(value.categories.length)})`}</summary>
-      {categories.length ? <div className="checks">{categories.map((item) => <label key={item.id} className="check">
-        <input type="checkbox" checked={value.categories.includes(item.id)} onChange={() => toggle("categories",item.id)}/>{item.name}</label>)}</div>
+      {categories.length ? <div className="checks">{categoryOptions(categories).map(item => <label key={item.id} className="check">
+        <input type="checkbox" checked={value.categories.includes(item.id)} onChange={() => toggle("categories",item.id)}/>{item.label}</label>)}</div>
         : <p className="muted">ابتدا دسته‌بندی ایجاد کنید.</p>}
     </details>
     <details className="variant"><summary>بازهٔ تعداد، وزن و مبلغ</summary><div className="form-grid">

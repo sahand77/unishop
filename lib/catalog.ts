@@ -59,8 +59,11 @@ export function parseProductPage(value: string | string[] | undefined) {
 }
 
 export async function productPage(page: number, publicOnly = false, category = "", search = "") {
-  const { rows } = await db().query<ProductRow>(`${productSelect}
-    WHERE (NOT $1::boolean OR p.status='published') AND ($2='' OR p.category_id=$2)
+  const { rows } = await db().query<ProductRow>(`WITH RECURSIVE category_branch(id) AS (
+      SELECT id FROM categories WHERE id=$2
+      UNION SELECT c.id FROM categories c JOIN category_branch b ON c.parent_id=b.id
+    ) ${productSelect}
+    WHERE (NOT $1::boolean OR p.status='published') AND ($2='' OR p.category_id IN (SELECT id FROM category_branch))
       AND ($3='' OR strpos(translate(lower(p.title),'كي','کی'),translate(lower($3),'كي','کی')) > 0)
     ORDER BY p.updated DESC, p.sequence DESC, p.id
     LIMIT $4 OFFSET $5`,[publicOnly,category,search,productsPerPage + 1,(page - 1) * productsPerPage]);
@@ -93,17 +96,33 @@ export async function product(id: string, publicOnly = false, client: PoolClient
 }
 
 export async function categories() {
-  const { rows } = await db().query<Category>("SELECT id,name FROM categories");
+  const { rows } = await db().query<Category>('SELECT id,name,parent_id AS "parentId" FROM categories');
   return rows.sort((a, b) => a.name.localeCompare(b.name,"fa"));
 }
 
-export async function saveCategory(categoryId: string, rawName: string) {
+export async function saveCategory(categoryId: string, rawName: string, parentId?: string) {
   const name = rawName.trim();
   if (!name || name.length > 80) throw new Error("نام دسته را وارد کنید.");
-  const result = categoryId
-    ? await db().query("UPDATE categories SET name=$1 WHERE id=$2",[name,categoryId])
-    : await db().query("INSERT INTO categories (id,name) VALUES ($1,$2) ON CONFLICT (name) DO NOTHING",[randomUUID(),name]);
-  if (!result.rowCount) throw new Error(categoryId ? "دسته پیدا نشد." : "این نام برای دستهٔ دیگری استفاده شده است.");
+  await transaction(async client => {
+    if (parentId) {
+      const { rows } = await client.query<{ id: string }>(`WITH RECURSIVE ancestors(id,parent_id) AS (
+        SELECT id,parent_id FROM categories WHERE id=$1
+        UNION SELECT c.id,c.parent_id FROM categories c JOIN ancestors a ON c.id=a.parent_id
+      ) SELECT id FROM ancestors`,[parentId]);
+      if (!rows.length) throw new Error("دستهٔ والد پیدا نشد.");
+      if (rows.some(row => row.id === categoryId)) throw new Error("دستهٔ والد را از بیرون این شاخه انتخاب کنید.");
+    }
+    if ((await client.query("SELECT 1 FROM categories WHERE name=$1 AND id<>$2",[name,categoryId])).rowCount) {
+      throw new Error("این نام برای دستهٔ دیگری استفاده شده است.");
+    }
+    if (categoryId) {
+      const result = await client.query(`UPDATE categories SET name=$1,
+        parent_id=CASE WHEN $3::text IS NULL THEN parent_id ELSE NULLIF($3,'') END WHERE id=$2`,[name,categoryId,parentId ?? null]);
+      if (!result.rowCount) throw new Error("دسته پیدا نشد.");
+    } else {
+      await client.query("INSERT INTO categories (id,name,parent_id) VALUES ($1,$2,$3)",[randomUUID(),name,parentId || null]);
+    }
+  });
 }
 
 function unique(values: string[]) {

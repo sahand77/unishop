@@ -4,6 +4,7 @@ import { useActionState, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ImagePlus, Plus, Save, Sparkles, Trash2 } from "lucide-react";
 import { previewBasalam, putCategory, putProduct, putStoreEnamad, putStoreFooter, putStoreName, signIn } from "@/app/actions";
+import { categoryOptions } from "@/lib/category-tree";
 import { enamadCodeLimit } from "@/lib/enamad";
 import { fa, money, selectionKey, type Attribute, type Category, type Offer, type Product } from "@/lib/shared";
 import type { ProductMedia } from "@/lib/product-media";
@@ -90,15 +91,27 @@ export function StoreEnamadForm({ embed }: { embed: string }) {
   </form>;
 }
 
-export function CategoryForm({ category }: { category?: Category }) {
-  const [feedback,action] = useActionState(putCategory,"");
+export function CategoryForm({ category, parents, defaultParent = "" }: {
+  category?: Category; parents: ReturnType<typeof categoryOptions>; defaultParent?: string;
+}) {
+  const [name,setName] = useState(category?.name ?? "");
+  const [parent,setParent] = useState(category ? category.parentId ?? "" : defaultParent);
+  const [feedback,action,pending] = useActionState(async (previous: { text: string; error?: boolean }, form: FormData) => {
+    const result = await putCategory(previous,form);
+    if (!category && !result.error) setName("");
+    return result;
+  }, { text:"" });
   return <form action={action} className="flow">
     <input type="hidden" name="id" value={category?.id || ""}/>
-    <label>{category ? "نام دسته" : "نام دستهٔ جدید"}<input key={category?.name} name="name" required maxLength={80} defaultValue={category?.name}/></label>
+    <label>نام دسته<input name="name" required maxLength={80} value={name} disabled={pending} onChange={event => setName(event.target.value)}/></label>
+    <label>دستهٔ والد<select name="parentId" value={parent} disabled={pending} onChange={event => setParent(event.target.value)}>
+      <option value="">بدون والد (دستهٔ اصلی)</option>
+      {parents.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+    </select></label>
     <PendingSubmitButton className={`button ${category ? "" : "primary"}`} pendingLabel="در حال ذخیره…">
       {category ? "ذخیرهٔ تغییرات" : "افزودن دسته"}
     </PendingSubmitButton>
-    {feedback && <p className="notice" role="status">{feedback}</p>}
+    {feedback.text && <p className={`notice${feedback.error ? " error" : ""}`} role={feedback.error ? "alert" : "status"}>{feedback.text}</p>}
   </form>;
 }
 
@@ -309,7 +322,7 @@ export function ProductForm({ initial,categories }: { initial?: Product; categor
       <label>عنوان کالا<input required maxLength={150} value={title} onChange={(event) => setTitle(event.target.value)}/></label>
       <label>توضیحات<textarea rows={4} maxLength={10000} value={description} onChange={(event) => setDescription(event.target.value)}/></label>
       <div className="form-grid"><label>دسته‌بندی<select value={category} onChange={(event) => setCategory(event.target.value)}>
-        <option value="">بدون دسته</option>{categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <option value="">بدون دسته</option>{categoryOptions(categories).map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
         <label>نوع کالا<select value={kind} onChange={(event) => setKind(event.target.value as Product["kind"])}>
           <option value="simple">کالای ساده</option><option value="variable">کالای متغیر</option></select></label>
       </div>

@@ -80,5 +80,11 @@ export async function migrate() {
       CREATE TABLE store_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       INSERT INTO schema_migrations VALUES (8);
     `);
+    if (!versions.has(9)) await client.query(`
+      ALTER TABLE categories ADD COLUMN parent_id TEXT REFERENCES categories(id),
+        ADD CONSTRAINT categories_not_own_parent CHECK (parent_id <> id);
+      CREATE INDEX categories_by_parent ON categories(parent_id);
+      INSERT INTO schema_migrations VALUES (9);
+    `);
   });
 }
