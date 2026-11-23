@@ -194,6 +194,13 @@ details.variant { padding:6px 10px; }
 .media-editor-list { display:grid; gap:8px; padding:0; margin:0; list-style:none; }
 .media-editor-list li { display:flex; align-items:center; gap:10px; border:1px solid var(--line); padding:8px; border-radius:9px; }
 .media-editor-list .upload-preview { flex:none; }
+.media-preview-trigger { display:flex; align-items:center; gap:10px; padding:0; border:0; background:none; color:var(--ink); text-align:start; border-radius:8px; }
+.media-preview-trigger:hover { color:var(--primary); }
+.admin-media-dialog { width:min(900px,calc(100% - 24px)); max-height:calc(100dvh - 24px); padding:14px; border:1px solid var(--line); border-radius:12px; color:var(--ink); background:white; }
+.admin-media-dialog::backdrop { background:#18211dc9; }
+.admin-media-dialog .section-head { margin-bottom:10px; }
+.admin-media-dialog :is(img,video) { display:block; max-width:100%; max-height:70dvh; margin-inline:auto; object-fit:contain; }
+.admin-media-dialog > .button { margin-top:10px; }
 .media-editor-actions { display:flex; gap:4px; margin-inline-start:auto; }
 .media-editor-actions button { width:32px; min-height:34px; }
 

@@ -8,7 +8,7 @@ import { enamadCodeLimit } from "@/lib/enamad";
 import { fa, money, selectionKey, type Attribute, type Category, type Offer, type Product } from "@/lib/shared";
 import type { ProductMedia } from "@/lib/product-media";
 import type { StoreFooterSettings } from "@/lib/store-settings";
-import { MediaEditor, uploadMedia } from "./media-editor";
+import { MediaEditor, MediaPreviewDialog, uploadMedia, type ShowMediaPreview } from "./media-editor";
 import { ProductImage } from "./store-interactions";
 
 export function LoginForm() {
@@ -99,8 +99,9 @@ export function CategoryForm({ category }: { category?: Category }) {
   </form>;
 }
 
-function ImageField({ image,onChange,onBusy,label }: {
+function ImageField({ image,onChange,onBusy,label,onPreview }: {
   image: string; onChange: (url: string) => void; onBusy: (busy: boolean) => void; label: string;
+  onPreview?: ShowMediaPreview;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [busy,setBusy] = useState(false);
@@ -121,7 +122,10 @@ function ImageField({ image,onChange,onBusy,label }: {
   }
   return <div className="flow">
     <span className="field-label">{label}</span><div className="upload-inner">
-      <ProductImage className="upload-preview" src={image} title={label}/>
+      {image && onPreview ? <button type="button" className="media-preview-trigger" aria-label={`پیش‌نمایش ${label}`}
+        aria-haspopup="dialog" onClick={() => onPreview({kind:"image",url:image},label)}>
+        <ProductImage className="upload-preview" src={image} title=""/>
+      </button> : <ProductImage className="upload-preview" src={image} title={label}/>}
       <button type="button" className="button" disabled={busy} onClick={() => input.current?.click()}><ImagePlus size={17}/>{busy ? "در حال بارگذاری" : "بارگذاری تصویر"}</button>
       {image && <button type="button" className="icon-link danger" aria-label="حذف تصویر" disabled={busy} onClick={() => onChange("")}><Trash2 size={18}/></button>}
     </div>
@@ -136,8 +140,9 @@ function newOffer(options: Record<string,string>): Offer {
   return { ...empty,id,options,sku:`US-${id.slice(0,8)}` };
 }
 
-function OfferFields({ item,update,media }: {
+function OfferFields({ item,update,media,defaultMedia,onPreview }: {
   item: Offer; update: (patch: Partial<Offer>) => void; media?: ProductMedia[];
+  defaultMedia?: ProductMedia; onPreview?: ShowMediaPreview;
 }) {
   const fields = [
     ["price","قیمت به تومان",item.active ? 1 : 0], ["stock","موجودی کل",item.reserved], ["weight","وزن به گرم",0],
@@ -150,14 +155,23 @@ function OfferFields({ item,update,media }: {
       </label>)}
       <label>کد کالا<input required maxLength={80} dir="ltr" value={item.sku} onChange={(event) => update({ sku:event.target.value })}/></label>
     </div>
-    {media && <><label className="check"><input type="checkbox" checked={item.active} onChange={(event) => update({ active:event.target.checked })}/> فعال و قابل نمایش</label>
+    {media && onPreview && <><label className="check"><input type="checkbox" checked={item.active} onChange={(event) => update({ active:event.target.checked })}/> فعال و قابل نمایش</label>
       <fieldset className="option-field"><legend>عکس یا ویدئوی ترکیب</legend>
         <div className="options variant-photos">
-          <button type="button" aria-pressed={!item.image} onClick={() => update({image:""})}>پیش‌فرض کالا</button>
-          {(item.image && !media.some(entry => entry.url === item.image) ? [...media,{kind:"image",url:item.image}] : media).map(({url,kind},index) =>
-            <button key={url} type="button" aria-pressed={item.image === url} onClick={() => update({image:url})}>
-              {kind === "video" ? <span>▶ ویدئو {fa(index + 1)}</span> : <img src={url} loading="lazy" alt={`عکس ${fa(index + 1)}`}/>}
-            </button>)}
+          <button type="button" aria-pressed={!item.image} aria-haspopup={defaultMedia ? "dialog" : undefined}
+            onClick={() => {
+              if (defaultMedia) onPreview(defaultMedia,"پیش‌فرض کالا",() => update({image:""}));
+              else update({image:""});
+            }}>پیش‌فرض کالا</button>
+          {(item.image && !media.some(entry => entry.url === item.image) ? [...media,{
+            kind:/\.(mp4|webm)(?:[?#]|$)/i.test(item.image) ? "video" as const : "image" as const, url:item.image,
+          }] : media).map((entry,index) => {
+            const label = `${entry.kind === "video" ? "ویدئو" : "عکس"} ${fa(index + 1)}`;
+            return <button key={entry.url} type="button" aria-pressed={item.image === entry.url} aria-haspopup="dialog"
+              aria-label={`پیش‌نمایش ${label}`} onClick={() => onPreview(entry,label,() => update({image:entry.url}))}>
+              {entry.kind === "video" ? <span>▶ {label}</span> : <img src={entry.url} loading="lazy" alt=""/>}
+            </button>;
+          })}
         </div>
       </fieldset></>}
   </div>;
@@ -185,6 +199,11 @@ export function ProductForm({ initial,categories }: { initial?: Product; categor
   const [link,setLink] = useState("");
   const [importing,setImporting] = useState(false);
   const [importMessage,setImportMessage] = useState("");
+  const [preview,setPreview] = useState<{ media: ProductMedia; label: string; onSelect?: () => void } | null>(null);
+  const showPreview: ShowMediaPreview = (media,label,onSelect) => setPreview({ media,label,onSelect });
+  const cover: ProductMedia | undefined = image ? {kind:"image",url:image} : undefined;
+  const variantMedia = cover && !gallery.some(entry => entry.url === cover.url) ? [cover,...gallery] : gallery;
+  const defaultMedia = gallery[0]?.kind === "video" ? gallery[0] : cover ?? gallery[0];
   async function importProduct(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (pending || busy || importing) return;
@@ -286,7 +305,7 @@ export function ProductForm({ initial,categories }: { initial?: Product; categor
         <label>نوع کالا<select value={kind} onChange={(event) => setKind(event.target.value as Product["kind"])}>
           <option value="simple">کالای ساده</option><option value="variable">کالای متغیر</option></select></label>
       </div>
-      <ImageField label="عکس کارت کالا" image={image} onChange={setImage} onBusy={changeBusy}/>
+      <ImageField label="عکس کارت کالا" image={image} onChange={setImage} onBusy={changeBusy} onPreview={showPreview}/>
     </fieldset>
     <fieldset className="panel" disabled={pending || busy > 0}>
       <MediaEditor items={gallery} onChange={next => {
@@ -294,7 +313,7 @@ export function ProductForm({ initial,categories }: { initial?: Product; categor
         if (removed.length) setVariants(before => before.map(item =>
           item.image !== image && removed.includes(item.image) ? {...item,image:""} : item));
         setGallery(next);
-      }} onBusy={changeBusy}/>
+      }} onBusy={changeBusy} onPreview={showPreview}/>
     </fieldset>
     {kind === "simple" ? <fieldset className="panel flow" disabled={pending || importing}>
       <h2>قیمت و موجودی</h2><OfferFields item={{ ...simple,active:false }} update={(patch) => setSimple((before) => ({ ...before,...patch }))}/>
@@ -337,7 +356,7 @@ export function ProductForm({ initial,categories }: { initial?: Product; categor
               {variant.image && (gallery.some(entry => entry.url === variant.image && entry.kind === "video") ? <span>▶ ویدئوی ترکیب</span> : <img src={variant.image} alt="عکس ترکیب" loading="lazy"/>)}
             </span>
           </summary>
-          <OfferFields item={variant} media={image && !gallery.some(entry => entry.url === image) ? [{kind:"image",url:image},...gallery] : gallery} update={(patch) =>
+          <OfferFields item={variant} media={variantMedia} defaultMedia={defaultMedia} onPreview={showPreview} update={(patch) =>
             setVariants((before) => before.map((item) => item.id === variant.id ? { ...item,...patch } : item))}/>
           <button type="button" className="button danger" onClick={() => setVariants((before) => before.filter((item) => item.id !== variant.id))}>
             <Trash2 size={16}/> حذف ترکیب</button>
@@ -348,7 +367,9 @@ export function ProductForm({ initial,categories }: { initial?: Product; categor
     {feedback.success && <p className="notice" role="status">{feedback.success}</p>}
     <div className="editor-buttons"><button type="submit" className="button" value="draft" disabled={pending || busy > 0}>ذخیرهٔ پیش‌نویس</button>
       <button type="submit" className="button primary" value="published" disabled={pending || busy > 0}><Save size={17}/> انتشار کالا</button></div>
-  </form></div>;
+  </form>
+  {preview && <MediaPreviewDialog {...preview} onClose={() => setPreview(null)}/>}
+  </div>;
 }
 
 function AttributeEditor({ attribute,locked,rename,renameValue,add,remove,dropValue }: {
