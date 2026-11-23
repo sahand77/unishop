@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { createWriteStream } from "node:fs";
+import { mkdir, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { Readable, Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { currentAdmin } from "@/lib/auth";
-import { imageLimit, videoLimit } from "@/lib/product-media";
 import { dataDir } from "@/lib/uploads";
-
-const requestLimit = videoLimit + 16 * 1024;
 
 function detectFormat(bytes: Buffer) {
   if (bytes.subarray(0,3).equals(Buffer.from([255,216,255]))) return "jpg";
@@ -23,36 +24,53 @@ export async function POST(request: Request) {
     return Response.json({ error: "مبدأ بارگذاری معتبر نیست." }, { status: 403 });
   }
 
-  const tooLarge = () => Response.json({ error: "حجم هر ویدئو باید حداکثر ۳۵ مگابایت باشد." }, { status: 413 });
-  if (Number(request.headers.get("content-length")) > requestLimit) return tooLarge();
   if (!request.body) return Response.json({ error: "فایلی انتخاب نشده است." }, { status: 400 });
 
-  let received = 0;
-  const bounded = request.body.pipeThrough(new TransformStream<Uint8Array,Uint8Array>({
-    transform(chunk, controller) {
-      received += chunk.byteLength;
-      if (received > requestLimit) controller.error(new Error("Upload exceeds limit"));
-      else controller.enqueue(chunk);
+  const invalidFile = () => Response.json({ error: "یک عکس یا ویدئوی معتبر انتخاب کنید." }, { status: 400 });
+  let body = request.body;
+  if (request.headers.get("content-type")?.split(";",1)[0].trim().toLowerCase() !== "application/octet-stream") {
+    const form = await request.formData().catch(() => null);
+    const file = form?.get("file");
+    if (!(file instanceof File)) return invalidFile();
+    body = file.stream();
+  }
+
+  const header = Buffer.alloc(64);
+  let headerLength = 0;
+  const unsupportedFormat = new Error("Unsupported media format");
+  const inspect = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      if (headerLength < header.length) {
+        headerLength += chunk.copy(header,headerLength,0,header.length - headerLength);
+        if (headerLength === header.length && !detectFormat(header)) return callback(unsupportedFormat);
+      }
+      callback(null,chunk);
     },
-  }));
-  const form = await new Response(bounded,{ headers:request.headers }).formData().catch(() => null);
-  if (received > requestLimit) return tooLarge();
-  const file = form?.get("file");
-  if (!(file instanceof File) || file.size < 12) {
-    return Response.json({ error: "یک عکس یا ویدئوی معتبر انتخاب کنید." }, { status: 400 });
-  }
+  });
 
-  const format = detectFormat(Buffer.from(await file.slice(0,64).arrayBuffer()));
-  if (!format) return Response.json({ error: "فرمت‌های مجاز JPEG، PNG، WebP، MP4 و WebM هستند." }, { status: 400 });
-  const kind = format === "mp4" || format === "webm" ? "video" : "image";
-  if (kind === "image" && file.size > imageLimit) {
-    return Response.json({ error: "حجم هر عکس باید حداکثر ۲ مگابایت باشد." }, { status: 413 });
-  }
-  if (file.size > videoLimit) return tooLarge();
-
-  const name = `${randomUUID()}.${format}`;
+  const id = randomUUID();
   const directory = join(dataDir(),"uploads");
+  const temporary = join(directory,`${id}.tmp`);
   await mkdir(directory,{ recursive: true });
-  await writeFile(join(directory,name),Buffer.from(await file.arrayBuffer()),{ flag: "wx" });
-  return Response.json({ url: `/uploads/${name}`,kind });
+  try {
+    await pipeline(
+      Readable.fromWeb(body as NodeReadableStream<Uint8Array>),
+      inspect,
+      createWriteStream(temporary,{ flags:"wx" }),
+      { signal: request.signal },
+    );
+    if (headerLength < 12) return invalidFile();
+    const format = detectFormat(header.subarray(0,headerLength));
+    if (!format) throw unsupportedFormat;
+
+    const name = `${id}.${format}`;
+    const kind = format === "mp4" || format === "webm" ? "video" : "image";
+    await rename(temporary,join(directory,name));
+    return Response.json({ url: `/uploads/${name}`,kind });
+  } catch (error) {
+    if (error !== unsupportedFormat) throw error;
+    return Response.json({ error: "فرمت‌های مجاز JPEG، PNG، WebP، MP4 و WebM هستند." }, { status: 400 });
+  } finally {
+    await rm(temporary,{ force:true });
+  }
 }

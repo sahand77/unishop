@@ -201,7 +201,7 @@ export function ProductForm({ initial,categories }: { initial?: Product; categor
       setSimple(draft.simple); setVariants(draft.variants); setAttributes(draft.attributes);
       setKind(draft.variants.length && draft.attributes.length ? "variable" : "simple");
       setAttributeName(""); setSelection({}); setVariantError(""); setFeedback({});
-      setImportMessage("اطلاعات آمادهٔ ویرایش است." + (draft.omitted ? ` به‌دلیل محدودیت گالری، ${fa(draft.omitted)} فایل اضافه نشد.` : ""));
+      setImportMessage("اطلاعات آمادهٔ ویرایش است.");
     } catch {
       setImportMessage("ارتباط با فروشگاه برقرار نشد.");
     } finally {

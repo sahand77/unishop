@@ -2,16 +2,14 @@
 
 import { useRef, useState } from "react";
 import { ChevronDown, ChevronUp, ImagePlus, Trash2, Video } from "lucide-react";
-import { galleryLimit, imageLimit, videoLimit, type ProductMedia } from "@/lib/product-media";
+import type { ProductMedia } from "@/lib/product-media";
 import { fa } from "@/lib/shared";
 import { ProductImage } from "./store-interactions";
 
 export async function uploadMedia(file: File): Promise<ProductMedia> {
-  const limit = file.type.startsWith("image/") ? imageLimit : videoLimit;
-  if (file.size > limit) throw new Error(file.type.startsWith("image/") ? "حجم عکس بیشتر از ۲ مگابایت است." : "حجم فایل بیشتر از ۳۵ مگابایت است.");
-  const form = new FormData();
-  form.set("file",file);
-  const response = await fetch("/api/uploads",{ method:"POST",body:form });
+  const response = await fetch("/api/uploads",{
+    method:"POST", headers:{ "Content-Type":"application/octet-stream" }, body:file,
+  });
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || "بارگذاری فایل انجام نشد.");
   return result;
@@ -26,11 +24,6 @@ export function MediaEditor({ items,onChange,onBusy }: {
   async function addFiles(files: File[]) {
     setErrors([]);
     if (!files.length) return;
-    if (items.length + files.length > galleryLimit) {
-      setErrors([`حداکثر ${fa(galleryLimit)} فایل به گالری اضافه کنید.`]);
-      return;
-    }
-
     const added: ProductMedia[] = [];
     const failures: string[] = [];
     onBusy(true);
@@ -60,7 +53,7 @@ export function MediaEditor({ items,onChange,onBusy }: {
 
   return <section className="flow" aria-labelledby="gallery-editor-title">
     <h2 id="gallery-editor-title">گالری عکس و ویدئو</h2>
-    <p className="muted">حداکثر ۱۲ فایل. هر عکس تا ۲ مگابایت و هر ویدئو تا ۳۵ مگابایت. فرمت ویدئو باید MP4 یا WebM باشد.</p>
+    <p className="muted">فرمت‌های عکس JPEG، PNG و WebP و فرمت‌های ویدئو MP4 و WebM هستند.</p>
     {items.length > 0 && <ol className="media-editor-list">{items.map((item,index) =>
       <li key={item.url}>
         {item.kind === "image" ? <ProductImage className="upload-preview" src={item.url} title=""/>
@@ -77,7 +70,7 @@ export function MediaEditor({ items,onChange,onBusy }: {
       </li>)}</ol>}
     <input ref={input} type="file" multiple hidden accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,.mp4,.webm"
       onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ""; void addFiles(files); }}/>
-    <button type="button" className="button" disabled={!!progress || items.length >= galleryLimit} onClick={() => input.current?.click()}>
+    <button type="button" className="button" disabled={!!progress} onClick={() => input.current?.click()}>
       <ImagePlus size={18}/> افزودن عکس و ویدئو
     </button>
     {progress && <p role="status">{progress}</p>}

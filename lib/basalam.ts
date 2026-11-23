@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { galleryLimit, basalamMediaUrl, type ProductMedia } from "./product-media";
+import { basalamMediaUrl, type ProductMedia } from "./product-media";
 import type { Attribute, Offer } from "./shared";
 
 const number = z.number().nonnegative().nullish();
@@ -73,6 +73,6 @@ export function basalamDraft(raw: unknown, reels: string[] = []) {
     return item;
   });
   return { title:p.title.slice(0,150), description:(p.description || p.summary || "").slice(0,10000), image,
-    gallery:gallery.slice(0,galleryLimit), omitted:Math.max(0,gallery.length-galleryLimit), category:p.category?.title,
+    gallery, category:p.category?.title,
     simple:offer(p.price,p.inventory,p.sku), attributes, variants };
 }
