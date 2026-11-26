@@ -5,3 +5,4 @@ data/
 !.env.example
 *.tsbuildinfo
 next-env.d.ts
+/AGENTS.md
