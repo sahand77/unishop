@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { db } from "./db";
 import { order, reopenPayment, settle, type Mode, type Order } from "./checkout";
+import { readCredential } from "./integration-settings";
 import { readStoreName } from "./store-settings";
 
 export function paymentMode(): Mode {
@@ -11,12 +12,6 @@ export function paymentMode(): Mode {
   return mode;
 }
 
-function merchant(mode: Mode) {
-  return mode === "live"
-    ? process.env.ZARINPAL_MERCHANT_ID
-    : process.env.ZARINPAL_SANDBOX_MERCHANT_ID ?? "00000000-0000-4000-8000-000000000000";
-}
-
 function origin(mode: Mode) {
   const url = new URL(process.env.APP_URL || "http://127.0.0.1:3000");
   if (mode === "live" && (url.protocol !== "https:" || url.hostname === "localhost" || url.hostname === "127.0.0.1")) {
@@ -25,9 +20,14 @@ function origin(mode: Mode) {
   return url.origin;
 }
 
-export function validateGateway(mode: Mode) {
-  origin(mode);
-  if (mode !== "simulator" && !merchant(mode)) throw new Error("شناسهٔ پذیرندهٔ درگاه تنظیم نشده است.");
+const defaultSandboxMerchant = "00000000-0000-4000-8000-000000000000";
+
+export async function validateGateway(mode: Mode, savedMerchant?: string | null) {
+  const callbackOrigin = origin(mode);
+  const merchantId = savedMerchant ?? (mode === "live" ? await readCredential("zarinpal")
+    : mode === "sandbox" ? process.env.ZARINPAL_SANDBOX_MERCHANT_ID ?? defaultSandboxMerchant : null);
+  if (mode !== "simulator" && !merchantId) throw new Error("شناسهٔ پذیرندهٔ درگاه تنظیم نشده است.");
+  return { callbackOrigin, merchantId: merchantId ?? null };
 }
 
 const sandbox = "https://sandbox.zarinpal.com";
@@ -42,11 +42,11 @@ export function gatewayLink(item: Order) {
 }
 
 type GatewayPayload = { code?: number; authority?: string; ref_id?: string | number };
-async function call(mode: Mode, endpoint: "request" | "verify", fields: Record<string, string | number>) {
+async function call(mode: Mode, merchantId: string | null, endpoint: "request" | "verify", fields: Record<string, string | number>) {
   const host = mode === "sandbox" ? sandbox : "https://api.zarinpal.com";
   const response = await fetch(`${host}/pg/v4/payment/${endpoint}.json`, {
     method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ merchant_id: merchant(mode), ...fields }),
+    body: JSON.stringify({ merchant_id: merchantId, ...fields }),
     signal: AbortSignal.timeout(12000), cache: "no-store",
   });
   if (response.status >= 500 || response.status === 429) throw new Error("درگاه در دسترس نیست.");
@@ -60,20 +60,20 @@ export async function initiate(item: Order) {
   const finish = (status: Order["status"], note: string, reference: string | null = null) =>
     settle(item.id, status, note, reference, item);
   try {
-    validateGateway(item.mode);
-    const callback = new URL(callbackPath, origin(item.mode));
+    const { callbackOrigin, merchantId } = await validateGateway(item.mode);
+    const callback = new URL(callbackPath, callbackOrigin);
     callback.searchParams.set("id",item.id);
     callback.searchParams.set("token",item.secret);
     const response = item.mode === "simulator"
       ? { code: 100, authority: `sim-${randomUUID()}` }
-      : await call(item.mode,"request",{ amount: item.amount, currency: "IRR",
+      : await call(item.mode,merchantId,"request",{ amount: item.amount, currency: "IRR",
           callback_url: callback.href, description: `سفارش ${await readStoreName()} ${item.id.slice(0,8)}` });
     if (response.code !== 100) return finish("failed",`درگاه درخواست را نپذیرفت. کد ${response.code}`);
     if (!response.authority || !/^[A-Za-z0-9-]{1,100}$/.test(response.authority)) {
       throw new Error("شناسهٔ معتبر پرداخت دریافت نشد.");
     }
-    await db().query("UPDATE orders SET authority=$1,message=NULL WHERE id=$2 AND status='pending' AND authority IS NULL AND request_started=$3",
-      [response.authority,item.id,item.request_started]);
+    await db().query("UPDATE orders SET authority=$1,merchant_id=$2,message=NULL WHERE id=$3 AND status='pending' AND authority IS NULL AND request_started=$4",
+      [response.authority,merchantId,item.id,item.request_started]);
     return (await order(item.id))!;
   } catch {
     return finish("review","درخواست پرداخت بی‌پاسخ ماند. از پنل دوباره بررسی کنید.");
@@ -98,8 +98,10 @@ export async function verify(item: Order, returnedStatus?: string) {
     return finish("review","در انتظار انتخاب نتیجه در درگاه شبیه‌ساز.");
   }
   try {
-    validateGateway(item.mode);
-    const result = await call(item.mode,"verify",{ amount: item.amount, authority: item.authority });
+    // Existing live payments were initiated with the environment merchant ID.
+    const savedMerchant = item.merchant_id ?? (item.mode === "live" ? process.env.ZARINPAL_MERCHANT_ID || undefined : undefined);
+    const { merchantId } = await validateGateway(item.mode, savedMerchant);
+    const result = await call(item.mode,merchantId,"verify",{ amount: item.amount, authority: item.authority });
     if (result.code === 100 || result.code === 101) {
       return finish("paid","پرداخت تأیید شد.",result.ref_id == null ? null : String(result.ref_id));
     }

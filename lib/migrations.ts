@@ -86,5 +86,9 @@ export async function migrate() {
       CREATE INDEX categories_by_parent ON categories(parent_id);
       INSERT INTO schema_migrations VALUES (9);
     `);
+    if (!versions.has(10)) await client.query(`
+      ALTER TABLE orders ADD COLUMN merchant_id TEXT;
+      INSERT INTO schema_migrations VALUES (10);
+    `);
   });
 }

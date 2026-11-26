@@ -7,6 +7,7 @@ import { cancelOrder, order, quote, reserveOrder } from "../lib/checkout";
 import { Pool } from "pg";
 import { addresses, customerOrders } from "../lib/profile";
 import { db, closeDb } from "../lib/db";
+import { saveCredential } from "../lib/integration-settings";
 import { migrate } from "../lib/migrations";
 import { initiate, recheck, resumePayment, verify } from "../lib/payment";
 import { rules, saveRule } from "../lib/shipping";
@@ -231,6 +232,32 @@ test("قطع ارتباط درگاه و آزاد کردن موجودی پس از
   assert.equal((await verify((await order(reserved.id))!,"NOK")).status,"canceled");
   assert.equal((await product(a.id))!.offers[0].reserved,0);
   assert.equal((await product(a.id))!.offers[0].stock,1);
+});
+
+test("پرداخت واقعی پس از تغییر شناسه با شناسهٔ اولیه تأیید می‌شود", async (context) => {
+  const originalAppUrl = process.env.APP_URL;
+  process.env.APP_URL = "https://shop.example";
+  context.after(() => { process.env.APP_URL = originalAppUrl; });
+
+  const merchant = randomUUID();
+  await saveCredential("zarinpal", merchant);
+  const { lines } = await inventory();
+  const shown = await quote(lines, "تهران");
+  const reserved = (await reserveOrder({ lines, customer, shown, attempt: randomUUID(), mode: "live" })).order!;
+  const sent: string[] = [];
+  context.mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
+    const payload = JSON.parse(String(init.body));
+    sent.push(payload.merchant_id);
+    return url.endsWith("/request.json")
+      ? Response.json({ data: { code: 100, authority: "merchant-rotation-test" } })
+      : Response.json({ data: { code: 100, ref_id: 12345 } });
+  });
+
+  const pending = await initiate(reserved);
+  assert.equal(pending.authority, "merchant-rotation-test");
+  await saveCredential("zarinpal", randomUUID());
+  assert.equal((await verify(pending, "OK")).status, "paid");
+  assert.deepEqual(sent, [merchant, merchant]);
 });
 
 test("سفارش و آدرس فقط برای حساب مالک نمایش داده می‌شوند", async () => {

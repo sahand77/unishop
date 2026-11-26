@@ -3,9 +3,10 @@ import { AmountInput } from "./amount-input";
 import { useActionState, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ImagePlus, Plus, Save, Sparkles, Trash2 } from "lucide-react";
-import { previewBasalam, putCategory, putProduct, putStoreEnamad, putStoreFooter, putStoreName, signIn } from "@/app/actions";
+import { previewBasalam, putCategory, putIntegration, putProduct, putStoreEnamad, putStoreFooter, putStoreName, signIn } from "@/app/actions";
 import { categoryOptions } from "@/lib/category-tree";
 import { enamadCodeLimit } from "@/lib/enamad";
+import type { CredentialSource, Integration } from "@/lib/integration-settings";
 import { fa, money, selectionKey, type Attribute, type Category, type Offer, type Product } from "@/lib/shared";
 import type { ProductMedia } from "@/lib/product-media";
 import type { StoreFooterSettings } from "@/lib/store-settings";
@@ -28,6 +29,29 @@ export function StoreNameForm({ name }: { name: string }) {
   return <form action={action} className="flow">
     <label>نام فروشگاه<input key={name} name="name" dir="auto" required maxLength={60} defaultValue={name}/></label>
     <PendingSubmitButton className="button primary" pendingLabel="در حال ذخیره…">ذخیرهٔ تغییرات</PendingSubmitButton>
+    {feedback.text && <p className={feedback.error ? "notice error" : "notice"}
+      role={feedback.error ? "alert" : "status"}>{feedback.text}</p>}
+  </form>;
+}
+
+const credentialStatus: Record<CredentialSource, string> = {
+  panel: "از پنل تنظیم شده است.",
+  environment: "از تنظیمات محیط اجرا خوانده می‌شود.",
+  missing: "هنوز تنظیم نشده است.",
+};
+
+export function IntegrationForm({ integration, source }: { integration: Integration; source: CredentialSource }) {
+  const [feedback, action, pending] = useActionState(putIntegration.bind(null, integration), { text: "" });
+  const payment = integration === "zarinpal";
+  return <form action={action} className="flow">
+    <p>وضعیت فعلی — {credentialStatus[source]}</p>
+    <label>{payment ? "شناسهٔ پذیرنده (Merchant ID)" : "کلید API پیامک"}
+      <input name="credential" type="password" autoComplete="new-password" spellCheck={false} dir="ltr"
+        required maxLength={payment ? 36 : 512} disabled={pending}/>
+    </label>
+    <PendingSubmitButton className="button primary" pendingLabel="در حال ذخیره…">
+      {payment ? "ذخیرهٔ شناسهٔ پذیرنده" : "ذخیرهٔ کلید پیامک"}
+    </PendingSubmitButton>
     {feedback.text && <p className={feedback.error ? "notice error" : "notice"}
       role={feedback.error ? "alert" : "status"}>{feedback.text}</p>}
   </form>;

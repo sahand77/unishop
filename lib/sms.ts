@@ -1,15 +1,16 @@
+import { readCredential } from "./integration-settings";
+
 export { digits, mobileNumber } from "./contact";
 
-export function smsConfig() {
-  const apiKey = process.env.SMS_API_KEY;
-  const templateId = Number(process.env.SMS_TEMPLATE_ID || 259263);
-  if (!apiKey || !Number.isSafeInteger(templateId) || templateId <= 0) throw new Error("کلید یا قالب پیامک تنظیم نشده است.");
-  return { apiKey, templateId, parameter: process.env.SMS_CODE_PARAMETER || "CODE" };
+type Parameters = { name: string; value: string }[];
+
+async function smsApiKey() {
+  const apiKey = await readCredential("sms");
+  if (!apiKey) throw new Error("کلید پیامک تنظیم نشده است.");
+  return apiKey;
 }
 
-export async function sendTemplate(mobile: string, templateId: number, parameters: { name: string; value: string }[]) {
-  const apiKey = process.env.SMS_API_KEY;
-  if (!apiKey) throw new Error("کلید پیامک تنظیم نشده است.");
+async function deliverTemplate(apiKey: string, mobile: string, templateId: number, parameters: Parameters) {
   const response = await fetch("https://api.sms.ir/v1/send/verify", {
     method: "POST", headers: { "Content-Type": "application/json", "X-API-KEY": apiKey },
     body: JSON.stringify({ mobile, templateId, parameters }),
@@ -19,10 +20,17 @@ export async function sendTemplate(mobile: string, templateId: number, parameter
   if (!response.ok || result.status !== 1) throw new Error("ارسال پیامک انجام نشد.");
 }
 
+export async function sendTemplate(mobile: string, templateId: number, parameters: Parameters) {
+  await deliverTemplate(await smsApiKey(), mobile, templateId, parameters);
+}
+
 export async function sendCode(mobile: string, code: string) {
-  const { templateId, parameter } = smsConfig();
+  const templateId = Number(process.env.SMS_TEMPLATE_ID || 259263);
+  if (!Number.isSafeInteger(templateId) || templateId <= 0) throw new Error("قالب پیامک تنظیم نشده است.");
+  const parameter = process.env.SMS_CODE_PARAMETER || "CODE";
+  const apiKey = await smsApiKey();
   try {
-    await sendTemplate(mobile, templateId, [{ name: parameter, value: code }]);
+    await deliverTemplate(apiKey, mobile, templateId, [{ name: parameter, value: code }]);
   } catch {
     throw new Error("ارسال کد انجام نشد. کمی بعد دوباره تلاش کنید.");
   }

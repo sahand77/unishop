@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import { test, before, after } from "node:test";
 import { randomUUID } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Pool } from "pg";
-import { mobileNumber, sendCode } from "../lib/sms";
+import { mobileNumber, sendCode, sendTemplate } from "../lib/sms";
 import { requestCode, verifyCode } from "../lib/customer-login";
 import { db, closeDb } from "../lib/db";
 import { advanceFulfillment } from "../lib/fulfillment";
+import { credentialSource, saveCredential } from "../lib/integration-settings";
 import { migrate } from "../lib/migrations";
 
 const schema = `sms_test_${randomUUID().replaceAll("-", "")}`;
@@ -111,4 +115,31 @@ test("order approval and shipment send each template once", async () => {
     { mobile, templateId: 868696, parameters: [{ name: "TOKEN", value: ` شماره سفارش: ${id.slice(0,8)}` }] },
     { mobile, templateId: 841736, parameters: [{ name: "ORDERID", value: ship.trackingCode }] },
   ]);
+});
+
+test("the encrypted panel credential overrides the environment for login and order SMS", async (context) => {
+  const directory = await mkdtemp(join(tmpdir(), "unishop-sms-"));
+  const previousDirectory = process.env.UNISHOP_DATA_DIR;
+  process.env.UNISHOP_DATA_DIR = directory;
+  context.after(async () => {
+    if (previousDirectory === undefined) delete process.env.UNISHOP_DATA_DIR;
+    else process.env.UNISHOP_DATA_DIR = previousDirectory;
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  assert.equal(await credentialSource("sms"), "environment");
+  const key = "panel-test-key";
+  await saveCredential("sms", key);
+  assert.equal(await credentialSource("sms"), "panel");
+  const { rows: [setting] } = await db().query("SELECT value FROM store_settings WHERE key='integration_sms'");
+  assert.ok(!setting.value.includes(key));
+
+  const sent: string[] = [];
+  context.mock.method(globalThis, "fetch", async (_url: string, init: RequestInit) => {
+    sent.push(new Headers(init.headers).get("X-API-KEY")!);
+    return Response.json({ status: 1 });
+  });
+  await sendCode("09123456787", "123456");
+  await sendTemplate("09123456787", 868696, [{ name: "TOKEN", value: "order" }]);
+  assert.deepEqual(sent, [key, key]);
 });

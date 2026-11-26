@@ -21,7 +21,7 @@ type QuoteRow = {
 };
 export type Order = {
   customer_id: string | null; tracking_code: string | null; id: string; attempt: string; secret: string; customer: Customer; quote: Quote; amount: number;
-  authority: string | null; mode: Mode; status: Status;
+  authority: string | null; merchant_id: string | null; mode: Mode; status: Status;
   fulfillment_status: FulfillmentStatus;
   reference: string | null; message: string | null; created: number; request_started: number;
 };
@@ -109,7 +109,7 @@ export function reopenPayment(id: string) {
       if (!result.rowCount) throw new Error("موجودی یکی از کالاها برای پرداخت مجدد کافی نیست.");
     }
     const { rows } = await client.query<OrderRow>(
-      "UPDATE orders SET status='pending', authority=NULL, message=NULL, reference=NULL, request_started=$2 WHERE id=$1 RETURNING *",
+      "UPDATE orders SET status='pending', authority=NULL, merchant_id=NULL, message=NULL, reference=NULL, request_started=$2 WHERE id=$1 RETURNING *",
       [id, Date.now()]);
     return readOrder(rows[0]);
   });

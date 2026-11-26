@@ -10,6 +10,7 @@ import { saveCategory, saveProduct } from "@/lib/catalog";
 import { cancelOrder, customerSchema, order, quote, reserveOrder } from "@/lib/checkout";
 import { db } from "@/lib/db";
 import { parseEnamadEmbed } from "@/lib/enamad";
+import { saveCredential, type Integration } from "@/lib/integration-settings";
 import { gatewayLink, initiate, paymentMode, recheck, resumePayment, verify, validateGateway } from "@/lib/payment";
 import { saveRule } from "@/lib/shipping";
 import { saveStoreEnamad, saveStoreFooter, saveStoreName, storeEnamadTag, storeFooterSchema, storeFooterTag, storeNameTag } from "@/lib/store-settings";
@@ -83,6 +84,26 @@ export async function putStoreEnamad(_previous: { text: string; error?: boolean 
   }
   updateTag(storeEnamadTag);
   return { text: "تنظیمات اینماد ذخیره شد." };
+}
+
+export async function putIntegration(integration: Integration, _previous: { text: string; error?: boolean }, form: FormData) {
+  await requireAdmin();
+  if (integration !== "zarinpal" && integration !== "sms") return { text: "سرویس معتبر نیست.", error: true };
+  const raw = form.get("credential");
+  const value = typeof raw === "string" ? raw.trim() : "";
+  if (integration === "zarinpal" && !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value)) {
+    return { text: "شناسهٔ پذیرندهٔ زرین‌پال را با قالب UUID وارد کنید.", error: true };
+  }
+  if (integration === "sms" && !/^[!-~]{1,512}$/.test(value)) {
+    return { text: "کلید API پنل پیامک را وارد کنید. کلید نباید فاصله داشته باشد.", error: true };
+  }
+  try {
+    await saveCredential(integration, value);
+  } catch {
+    return { text: "تنظیمات سرویس ذخیره نشد. دوباره تلاش کنید.", error: true };
+  }
+  revalidatePath("/admin/settings");
+  return { text: "تنظیمات سرویس ذخیره شد." };
 }
 
 export async function putCategory(_previous: { text: string; error?: boolean }, form: FormData) {
@@ -184,7 +205,7 @@ export async function checkout(input: {
   if (!z.uuid().safeParse(input.attempt).success) return { error: "شناسهٔ ثبت سفارش معتبر نیست." };
   try {
     const mode = paymentMode();
-    validateGateway(mode);
+    await validateGateway(mode);
     const result = await reserveOrder({ customerId: (await currentCustomer())?.id, lines: input.lines, customer: customer.data, shown: shown.data, attempt: input.attempt, mode });
     if (result.changed) return { changed: result.changed };
     const item = result.fresh ? await initiate(result.order) : result.order;
