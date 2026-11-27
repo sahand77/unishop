@@ -3,6 +3,7 @@ import { validateRecipient } from "./validate-recipient";
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { z } from "zod";
 import { ArrowLeft, ImageOff, Minus, Search, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { checkout, getCartAvailability, getQuote } from "@/app/actions";
 import { fa, money, provinces, type Quote } from "@/lib/shared";
@@ -120,13 +121,29 @@ function EmptyBasket() {
 }
 
 const emptyCustomer = { name:"",mobile:"",province:"",city:"",address:"",postalCode:"" };
+const checkoutDraftSchema = z.object({
+  customer: z.object({ name:z.string(),mobile:z.string(),province:z.string().refine(value => !value || provinces.some(province => province === value)),
+    city:z.string(),address:z.string(),postalCode:z.string() }),
+  selected: z.string(), revision: z.string(),
+});
+type CheckoutDraft = z.infer<typeof checkoutDraftSchema>;
+const emptyDraft: CheckoutDraft = { customer:emptyCustomer,selected:"",revision:"" };
+const checkoutDraftKey = (customerId: string | null) => `unishop-checkout-draft:${customerId ?? "guest"}`;
+
+function readCheckoutDraft(key: string) {
+  try {
+    const result = checkoutDraftSchema.safeParse(JSON.parse(localStorage.getItem(key) ?? "null"));
+    return result.success ? result.data : undefined;
+  } catch { /* An unreadable draft should not block checkout. */ }
+}
+
 const digits = (value: string) => value.replace(/[۰-۹]/g,(char) => String(char.charCodeAt(0)-1776))
   .replace(/[٠-٩]/g,(char) => String(char.charCodeAt(0)-1632));
 
-export function CheckoutScreen({ saved }: { saved: import("@/lib/profile").SavedAddress[] }) {
-  const [selected, setSelected] = useState("");
+export function CheckoutScreen({ saved, customerId }: { saved: import("@/lib/profile").SavedAddress[]; customerId: string | null }) {
   const { items, ready } = useCart();
-  const [customer,setCustomer] = useState(emptyCustomer);
+  const draftKey = checkoutDraftKey(customerId);
+  const [draft,setDraft] = useState<CheckoutDraft>();
   const [pricing,setPricing] = useState<Quote>();
   const [error,setError] = useState("");
   const [notice,setNotice] = useState("");
@@ -138,18 +155,28 @@ export function CheckoutScreen({ saved }: { saved: import("@/lib/profile").Saved
   const estimate = items.reduce((total,item) => total+item.quantity*item.price,0);
 
   useEffect(() => {
+    setDraft(readCheckoutDraft(draftKey) ?? emptyDraft);
     function reset(event: PageTransitionEvent) {
       if (event.persisted) setRedirecting(false);
     }
     window.addEventListener("pageshow",reset);
     return () => window.removeEventListener("pageshow",reset);
-  }, []);
+  },[draftKey]);
 
   if (!ready) return <p>در حال بارگذاری سبد خرید…</p>;
   if (!items.length) return <EmptyBasket/>;
+  if (!draft) return <p>در حال بارگذاری فرم سفارش…</p>;
+  const { customer } = draft;
+  const selected = saved.some((entry) => entry.id === draft.selected) ? draft.selected : "";
+
+  function saveDraft(customer: CheckoutDraft["customer"], selected = "") {
+    const next = { customer,selected,revision:crypto.getRandomValues(new Uint32Array(4)).join("-") };
+    setDraft(next);
+    try { localStorage.setItem(draftKey,JSON.stringify(next)); } catch { /* The form still works without storage. */ }
+  }
+
   function field(name: keyof typeof customer, value: string) {
-    setSelected("");
-    setCustomer({ ...customer,[name]:value });
+    saveDraft({ ...customer,[name]:value });
     if (name === "province") { setPricing(undefined); setNotice(""); setError(""); }
   }
   function calculate() {
@@ -169,13 +196,14 @@ export function CheckoutScreen({ saved }: { saved: import("@/lib/profile").Saved
     if (!pricing) { calculate(); return; }
     setError(""); setNotice("");
     const key = attempt || crypto.randomUUID();
+    const draftRevision = draft?.revision;
     setAttempt(key);
     start(async () => {
       try {
         const result = await checkout({ lines,customer,attempt:key,shown:pricing });
         if ("error" in result) { setError(result.error); return; }
         if ("changed" in result) { setPricing(result.changed); setNotice("مبلغ تغییر کرده است. جمع جدید را بررسی کنید و دوباره دکمهٔ پرداخت را بزنید."); return; }
-        try { localStorage.setItem(`unishop-paid-${result.orderId}`,JSON.stringify(lines)); } catch { /* Checkout can continue without cart storage. */ }
+        try { localStorage.setItem(`unishop-paid-${result.orderId}`,JSON.stringify({ lines,draftRevision })); } catch { /* Checkout can continue without cart storage. */ }
         window.location.assign(result.url);
         setRedirecting(true);
       } catch { setError("ارتباط با فروشگاه برقرار نشد. دوباره تلاش کنید."); }
@@ -186,8 +214,7 @@ export function CheckoutScreen({ saved }: { saved: import("@/lib/profile").Saved
       <h2>اطلاعات گیرنده</h2>
       {saved.length > 0 && <label>آدرس ذخیره‌شده<select value={selected} onChange={event => {
         const id = event.target.value;
-        setSelected(id);
-        setCustomer(saved.find(a => a.id === id)?.recipient || emptyCustomer);
+        saveDraft(saved.find(a => a.id === id)?.recipient ?? emptyCustomer,id);
         setPricing(undefined); setAttempt(""); setError(""); setNotice("");
       }}><option value="">ورود دستی</option>{saved.map(a => <option key={a.id} value={a.id}>{a.recipient.name} · {a.recipient.city}، {a.recipient.address}</option>)}</select></label>}
       <div className="form-grid">
@@ -215,15 +242,22 @@ export function CheckoutScreen({ saved }: { saved: import("@/lib/profile").Saved
   </form>;
 }
 
-export function ClearPaidCart({ orderId }: { orderId: string }) {
+export function ClearPaidCart({ orderId, customerId }: { orderId: string; customerId: string | null }) {
   const { ready,consume } = useCart();
   useEffect(() => {
     if (!ready) return;
     const key = `unishop-paid-${orderId}`;
-    const saved = localStorage.getItem(key);
-    if (!saved) return;
-    localStorage.removeItem(key);
-    try { consume(JSON.parse(saved)); } catch { /* The saved cart may no longer exist. */ }
-  },[ready,orderId,consume]);
+    try {
+      const saved = localStorage.getItem(key);
+      if (!saved) return;
+      localStorage.removeItem(key);
+      const receipt = JSON.parse(saved);
+      consume(Array.isArray(receipt) ? receipt : receipt.lines);
+      const draftKey = checkoutDraftKey(customerId);
+      if (receipt.draftRevision && readCheckoutDraft(draftKey)?.revision === receipt.draftRevision) {
+        localStorage.removeItem(draftKey);
+      }
+    } catch { /* The saved cart or draft may no longer exist. */ }
+  },[ready,orderId,customerId,consume]);
   return null;
 }

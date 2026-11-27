@@ -11,7 +11,7 @@ export default async function Receipt({ params,searchParams }: {
   const item = await order((await params).id);
   if (!item || item.secret !== (await searchParams).token) notFound();
   return <main className="wrap narrow interior flow"><section className="panel flow">
-    {item.status === "paid" && <ClearPaidCart orderId={item.id}/>}
+    {item.status === "paid" && <ClearPaidCart orderId={item.id} customerId={item.customer_id}/>}
     <h1>نتیجهٔ سفارش</h1><span className={`badge ${item.status}`}>{customerPaymentLabels[item.status]}</span>
     <p>{fulfillmentLabels[item.fulfillment_status]}{item.tracking_code && <> · کد رهگیری <bdi>{item.tracking_code}</bdi></>}</p>
     {item.message && <p>{item.message}</p>}
