@@ -7,8 +7,9 @@ import { z } from "zod";
 import { ArrowLeft, ImageOff, Minus, Search, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { checkout, getCartAvailability, getQuote } from "@/app/actions";
 import { fa, money, provinces, type Quote } from "@/lib/shared";
-import { useCart } from "./cart-context";
+import { useCart, type BasketItem } from "./cart-context";
 import { PendingButton } from "./pending-button";
+import { ProvinceCityFields } from "./province-city-fields";
 
 export function ProductImage({ src, title, className }: { src: string; title: string; className?: string }) {
   return src ? <img src={src} alt={title} className={className} />
@@ -30,7 +31,7 @@ export function CartLink() {
     <span className="cart-count">{fa(items.reduce((sum,item) => sum+item.quantity,0))}</span></Link>;
 }
 
-export function CartScreen() {
+export function CartScreen({ customerId }: { customerId: string | null }) {
   const { items, ready, setQuantity } = useCart();
   const offerKey = JSON.stringify([...new Set(items.map(({ id }) => id))].sort());
   const [stock,setStock] = useState<{ key: string; available: Map<string,number> | null }>();
@@ -81,7 +82,6 @@ export function CartScreen() {
     return { item,limit,stockIssue:!!available && item.quantity > limit };
   });
   const hasStockIssue = lines.some(({ stockIssue }) => stockIssue);
-  const subtotal = items.reduce((sum,item) => sum + item.quantity*item.price,0);
   if (!ready) return <p>در حال بارگذاری سبد خرید…</p>;
   if (!items.length) return <EmptyBasket/>;
   return <div className="split">
@@ -104,7 +104,8 @@ export function CartScreen() {
       </div><button className="icon-link" type="button" aria-label="حذف کالا" onClick={() => setQuantity(item.id,0)}><Trash2 size={17}/></button></div>
       </article>
     ))}</div>
-    <aside className="panel flow summary"><h2>خلاصهٔ سبد</h2><p><span>جمع کالاها</span><strong>{money(subtotal)}</strong></p>
+    <aside className="panel flow summary"><h2>خلاصهٔ سبد</h2>
+      <CartShippingEstimate customerId={customerId} items={items} canQuote={!!available && !hasStockIssue}/>
       {available === undefined && <div role="status">در حال بررسی موجودی کالاها…</div>}
       {available === null && <div className="notice error" role="status">موجودی کالاها بررسی نشد. <button type="button" className="button"
         onClick={() => { setStock(undefined); setRetry((count) => count+1); }}>تلاش دوباره</button></div>}
@@ -135,6 +136,59 @@ function readCheckoutDraft(key: string) {
     const result = checkoutDraftSchema.safeParse(JSON.parse(localStorage.getItem(key) ?? "null"));
     return result.success ? result.data : undefined;
   } catch { /* An unreadable draft should not block checkout. */ }
+}
+
+function writeCheckoutDraft(key: string, customer: CheckoutDraft["customer"], selected = "") {
+  const draft = { customer,selected,revision:crypto.getRandomValues(new Uint32Array(4)).join("-") };
+  try { localStorage.setItem(key,JSON.stringify(draft)); } catch { /* Checkout still works without storage. */ }
+  return draft;
+}
+
+type Destination = Pick<CheckoutDraft["customer"],"province" | "city">;
+
+function CartShippingEstimate({ customerId,items,canQuote }: { customerId: string | null; items: BasketItem[]; canQuote: boolean }) {
+  const draftKey = checkoutDraftKey(customerId);
+  const [destination,setDestination] = useState<Destination>();
+  const [result,setResult] = useState<{ key: string; quote?: Quote; error?: string }>();
+  const quoteKey = canQuote && destination?.province && destination.city ? JSON.stringify({
+    province:destination.province,city:destination.city,lines:items.map(({ id,quantity }) => ({ id,quantity })),
+  }) : "";
+
+  useEffect(() => {
+    const { province,city } = (readCheckoutDraft(draftKey) ?? emptyDraft).customer;
+    setDestination({ province,city });
+  },[draftKey]);
+
+  useEffect(() => {
+    if (!quoteKey) return;
+    let cancelled = false;
+    const { province,city,lines } = JSON.parse(quoteKey);
+    getQuote(lines,province,city).then(quote => {
+      if (!cancelled) setResult({ key:quoteKey,...quote });
+    }).catch(() => {
+      if (!cancelled) setResult({ key:quoteKey,error:"ارتباط با فروشگاه برقرار نشد." });
+    });
+    return () => { cancelled = true; };
+  },[quoteKey]);
+
+  const current = result?.key === quoteKey ? result : undefined;
+  const subtotal = current?.quote?.subtotal ?? items.reduce((sum,item) => sum + item.quantity*item.price,0);
+  const shipping = current?.quote ? money(current.quote.shipping) : current?.error ? "محاسبه نشد"
+    : quoteKey ? "در حال محاسبه…" : destination?.province && destination.city ? "پس از بررسی موجودی" : "پس از انتخاب مقصد";
+  return <>
+    <p><span>جمع کالاها</span><strong>{money(subtotal)}</strong></p>
+    {destination && <div className="form-grid">
+      <ProvinceCityFields {...destination} onChange={location => {
+        const { customer } = readCheckoutDraft(draftKey) ?? emptyDraft;
+        writeCheckoutDraft(draftKey,{ ...customer,...location });
+        setDestination(location);
+        setResult(undefined);
+      }}/>
+    </div>}
+    <p aria-live="polite"><span>هزینهٔ ارسال</span><strong>{shipping}</strong></p>
+    {current?.quote && <p className="total"><span>جمع با ارسال</span><strong>{money(current.quote.total)}</strong></p>}
+    {current?.error && <div className="notice error" role="status">{current.error}</div>}
+  </>;
 }
 
 const digits = (value: string) => value.replace(/[۰-۹]/g,(char) => String(char.charCodeAt(0)-1776))
@@ -170,21 +224,22 @@ export function CheckoutScreen({ saved, customerId }: { saved: import("@/lib/pro
   const selected = saved.some((entry) => entry.id === draft.selected) ? draft.selected : "";
 
   function saveDraft(customer: CheckoutDraft["customer"], selected = "") {
-    const next = { customer,selected,revision:crypto.getRandomValues(new Uint32Array(4)).join("-") };
-    setDraft(next);
-    try { localStorage.setItem(draftKey,JSON.stringify(next)); } catch { /* The form still works without storage. */ }
+    setDraft(writeCheckoutDraft(draftKey,customer,selected));
   }
 
   function field(name: keyof typeof customer, value: string) {
     saveDraft({ ...customer,[name]:value });
-    if (name === "province") { setPricing(undefined); setNotice(""); setError(""); }
+  }
+  function changeLocation(location: Pick<typeof customer,"province" | "city">) {
+    saveDraft({ ...customer,...location });
+    setPricing(undefined); setNotice(""); setError(""); setAttempt("");
   }
   function calculate() {
-    if (busy || !customer.province) return;
+    if (busy || !customer.province || !customer.city) return;
     setError(""); setNotice("");
     start(async () => {
       try {
-        const result = await getQuote(lines,customer.province);
+        const result = await getQuote(lines,customer.province,customer.city);
         setPricing(result.quote);
         if (result.error) setError(result.error);
       } catch { setError("ارتباط با فروشگاه برقرار نشد. دوباره تلاش کنید."); }
@@ -220,9 +275,7 @@ export function CheckoutScreen({ saved, customerId }: { saved: import("@/lib/pro
       <div className="form-grid">
         <label><span>نام و نام خانوادگی <span aria-hidden="true">*</span></span><input required name="name" autoComplete="name" minLength={2} value={customer.name} onChange={(event) => field("name",event.target.value)}/></label>
         <label><span>شمارهٔ موبایل <span aria-hidden="true">*</span></span><input required name="mobile" inputMode="numeric" autoComplete="tel" dir="ltr" value={customer.mobile} onChange={(event) => field("mobile",digits(event.target.value))}/></label>
-        <label><span>استان <span aria-hidden="true">*</span></span><select required name="province" value={customer.province} onChange={(event) => field("province",event.target.value)}>
-          <option value="">انتخاب استان</option>{provinces.map((province) => <option key={province}>{province}</option>)}</select></label>
-        <label><span>شهر <span aria-hidden="true">*</span></span><input required name="city" autoComplete="address-level2" minLength={2} value={customer.city} onChange={(event) => field("city",event.target.value)}/></label>
+        <ProvinceCityFields province={customer.province} city={customer.city} onChange={changeLocation}/>
         <label><span>کد پستی <span aria-hidden="true">*</span></span><input required name="postalCode" dir="ltr" inputMode="numeric" autoComplete="postal-code" value={customer.postalCode} onChange={(event) => field("postalCode",digits(event.target.value))}/></label>
       </div>
       <label><span>نشانی کامل <span aria-hidden="true">*</span></span><textarea required name="address" autoComplete="street-address" minLength={8} value={customer.address} onChange={(event) => field("address",event.target.value)}/></label>
@@ -233,7 +286,7 @@ export function CheckoutScreen({ saved, customerId }: { saved: import("@/lib/pro
       {pricing && <p className="total"><span>مبلغ پرداخت</span><strong>{money(pricing.total)}</strong></p>}
       {error && <div className="notice error" role="alert">{error}</div>}
       {notice && <div className="notice" role="status">{notice}</div>}
-      {!pricing ? <PendingButton type="button" className="button primary" disabled={!customer.province} busy={busy}
+      {!pricing ? <PendingButton type="button" className="button primary" disabled={!customer.province || !customer.city} busy={busy}
         pendingLabel="در حال محاسبهٔ ارسال…" onClick={calculate}>محاسبهٔ ارسال</PendingButton>
         : <PendingButton className="button primary" busy={busy} type="submit" pendingLabel="در حال اتصال به درگاه…">
           تأیید و پرداخت <ArrowLeft size={17}/>

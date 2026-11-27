@@ -165,7 +165,7 @@ export function ProductDetail({ product, category, storeName }: { product: Produ
       </div>
       <div className="pdp-shipping">
         <Truck size={21}/>
-        <div><strong>ارسال سفارش</strong><p>هزینهٔ ارسال پس از انتخاب استان در مرحلهٔ ثبت سفارش محاسبه می‌شود.</p></div>
+        <div><strong>ارسال سفارش</strong><p>هزینهٔ ارسال پس از انتخاب استان و شهر در مرحلهٔ ثبت سفارش محاسبه می‌شود.</p></div>
       </div>
       <div className="pdp-seller">
         <span className="pdp-seller-icon"><Store size={22}/></span>

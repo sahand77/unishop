@@ -130,6 +130,31 @@ test("قوانین ارسال هم‌زمان و مرزهای بازه", async (
   assert.deepEqual((await rules()).map((item) => item.priority),[10,20,100]);
 });
 
+test("تعرفهٔ شهر بر تعرفهٔ استان و تعرفهٔ سراسری مقدم است", async () => {
+  const id = randomUUID();
+  const item = await inventory();
+  const regionalRule = { ...baseRule,id,fee:7500,priority:200,provinces:["البرز"] };
+  await assert.rejects(() => saveRule({ ...regionalRule,cities:[{ province:"تهران",city:"کرج" }] }),/استان و شهر/);
+  await saveRule({ ...regionalRule,cities:[{ province:"تهران",city:"تهران" }] });
+  try {
+    const cityQuote = await quote(item.lines,"تهران","تهران");
+    const otherCityQuote = await quote(item.lines,"تهران","ورامین");
+    assert.equal(cityQuote.shipping,7500);
+    assert.equal(otherCityQuote.shipping,15000);
+    assert.equal((await quote(item.lines,"البرز","کرج")).shipping,7500);
+    const result = await reserveOrder({ lines:item.lines,customer,shown:otherCityQuote,attempt:randomUUID(),mode:"sandbox" });
+    assert.equal(result.changed?.shipping,cityQuote.shipping);
+    const saved = (await rules()).find(rule => rule.id === id)!;
+    assert.deepEqual(saved.provinces,["البرز"]);
+    await db().query("UPDATE shipping SET config=$1 WHERE id=$2",[JSON.stringify({ ...saved,provinces:["تهران"] }),id]);
+    assert.deepEqual((await rules()).find(rule => rule.id === id)?.provinces,[]);
+    assert.equal((await quote(item.lines,"تهران","ورامین")).shipping,15000);
+    assert.equal((await quote(item.lines,"البرز","کرج")).shipping,20000);
+  } finally {
+    await db().query("DELETE FROM shipping WHERE id=$1",[id]);
+  }
+});
+
 test("کالاهای پیش‌نویس و ترکیب‌های غیرفعال در خرید در دسترس نیستند", async () => {
   const a = await inventory();
   const item = (await product(a.id))!;

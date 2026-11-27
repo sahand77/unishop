@@ -44,6 +44,7 @@ export type Quote = {
 };
 export type ShippingRule = {
   id: string; name: string; priority: number; fee: number; provinces: string[]; categories: string[];
+  cities?: { province: string; city: string }[];
   minQuantity: number | null; maxQuantity: number | null; minWeight: number | null;
   maxWeight: number | null; minSubtotal: number | null; maxSubtotal: number | null;
 };

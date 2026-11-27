@@ -188,9 +188,11 @@ export async function getCartAvailability(ids: unknown) {
   return cartAvailability(ids);
 }
 
-export async function getQuote(lines: unknown, province: unknown) {
+export async function getQuote(lines: unknown, province: unknown, city: unknown) {
+  const location = z.string().trim().min(2).max(100).safeParse(city);
+  if (!location.success) return { error: "شهر گیرنده را انتخاب کنید." };
   try {
-    return { quote: await quote(lines,province) };
+    return { quote: await quote(lines,province,location.data) };
   } catch (error) {
     return { error: message(error) };
   }

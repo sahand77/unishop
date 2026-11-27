@@ -54,7 +54,7 @@ export async function cartAvailability(input: unknown) {
   return rows;
 }
 
-export async function quote(input: unknown, destination: unknown, client: PoolClient | ReturnType<typeof db> = db()): Promise<Quote> {
+export async function quote(input: unknown, destination: unknown, city?: string, client: PoolClient | ReturnType<typeof db> = db()): Promise<Quote> {
   const lines = linesSchema.safeParse(input);
   const province = provinceSchema.safeParse(destination);
   if (!lines.success || !province.success) throw new Error("سبد خرید و استان را بررسی کنید.");
@@ -77,8 +77,8 @@ export async function quote(input: unknown, destination: unknown, client: PoolCl
     const variant = variationName(JSON.parse(row.attributes), JSON.parse(row.options));
     return { id: row.id, title: row.title, variant, quantity: line.quantity, price: row.price, image: row.image };
   });
-  const rule = matchingRule(await rules(client), { province: province.data, categories: categoryIds, quantity, weight, subtotal });
-  if (!rule) throw new Error("برای این سبد و استان، روش ارسال فعالی تعریف نشده است.");
+  const rule = matchingRule(await rules(client), { province: province.data, city, categories: categoryIds, quantity, weight, subtotal });
+  if (!rule) throw new Error("برای این سبد و مقصد، روش ارسال فعالی تعریف نشده است.");
   return { subtotal, quantity, weight, shipping: rule.fee, total: subtotal + rule.fee, items };
 }
 
@@ -89,7 +89,7 @@ export function reserveOrder(input: {
     const { rows:[existing] } = await client.query<OrderRow>("SELECT * FROM orders WHERE attempt=$1",[input.attempt]);
     if (existing && existing.customer_id !== (input.customerId ?? null)) throw new Error("لطفاً سفارش را دوباره ثبت کنید.");
     if (existing) return { order: readOrder(existing), fresh: false } as const;
-    const pricing = await quote(input.lines, input.customer.province,client);
+    const pricing = await quote(input.lines, input.customer.province,input.customer.city,client);
     if (pricing.total !== input.shown.total || pricing.shipping !== input.shown.shipping || pricing.subtotal !== input.shown.subtotal) {
       return { changed: pricing } as const;
     }
