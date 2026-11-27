@@ -7,7 +7,7 @@ import { z } from "zod";
 import { ArrowLeft, ImageOff, Minus, Search, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { checkout, getCartAvailability, getQuote } from "@/app/actions";
 import { fa, money, provinces, type Quote } from "@/lib/shared";
-import { useCart, type BasketItem } from "./cart-context";
+import { useCart } from "./cart-context";
 import { PendingButton } from "./pending-button";
 import { ProvinceCityFields } from "./province-city-fields";
 
@@ -31,7 +31,7 @@ export function CartLink() {
     <span className="cart-count">{fa(items.reduce((sum,item) => sum+item.quantity,0))}</span></Link>;
 }
 
-export function CartScreen({ customerId }: { customerId: string | null }) {
+export function CartScreen() {
   const { items, ready, setQuantity } = useCart();
   const offerKey = JSON.stringify([...new Set(items.map(({ id }) => id))].sort());
   const [stock,setStock] = useState<{ key: string; available: Map<string,{ available: number; price: number }> | null }>();
@@ -86,6 +86,7 @@ export function CartScreen({ customerId }: { customerId: string | null }) {
     return { item,limit,stockIssue:!!available && item.quantity > limit };
   });
   const hasStockIssue = lines.some(({ stockIssue }) => stockIssue);
+  const subtotal = pricedItems.reduce((sum,item) => sum + item.quantity*item.price,0);
   if (!ready) return <p>در حال بارگذاری سبد خرید…</p>;
   if (!items.length) return <EmptyBasket/>;
   return <div className="split">
@@ -109,7 +110,7 @@ export function CartScreen({ customerId }: { customerId: string | null }) {
       </article>
     ))}</div>
     <aside className="panel flow summary"><h2>خلاصهٔ سبد</h2>
-      <CartShippingEstimate customerId={customerId} items={pricedItems} canQuote={!!available && !hasStockIssue}/>
+      <p><span>جمع کالاها</span><strong>{money(subtotal)}</strong></p>
       {available === undefined && <div role="status">در حال بررسی موجودی کالاها…</div>}
       {available === null && <div className="notice error" role="status">موجودی کالاها بررسی نشد. <button type="button" className="button"
         onClick={() => { setStock(undefined); setRetry((count) => count+1); }}>تلاش دوباره</button></div>}
@@ -148,53 +149,6 @@ function writeCheckoutDraft(key: string, customer: CheckoutDraft["customer"], se
   return draft;
 }
 
-type Destination = Pick<CheckoutDraft["customer"],"province" | "city">;
-
-function CartShippingEstimate({ customerId,items,canQuote }: { customerId: string | null; items: BasketItem[]; canQuote: boolean }) {
-  const draftKey = checkoutDraftKey(customerId);
-  const [destination,setDestination] = useState<Destination>();
-  const [result,setResult] = useState<{ key: string; quote?: Quote; error?: string }>();
-  const quoteKey = canQuote && destination?.province && destination.city ? JSON.stringify({
-    province:destination.province,city:destination.city,lines:items.map(({ id,quantity }) => ({ id,quantity })),
-  }) : "";
-
-  useEffect(() => {
-    const { province,city } = (readCheckoutDraft(draftKey) ?? emptyDraft).customer;
-    setDestination({ province,city });
-  },[draftKey]);
-
-  useEffect(() => {
-    if (!quoteKey) return;
-    let cancelled = false;
-    const { province,city,lines } = JSON.parse(quoteKey);
-    getQuote(lines,province,city).then(quote => {
-      if (!cancelled) setResult({ key:quoteKey,...quote });
-    }).catch(() => {
-      if (!cancelled) setResult({ key:quoteKey,error:"ارتباط با فروشگاه برقرار نشد." });
-    });
-    return () => { cancelled = true; };
-  },[quoteKey]);
-
-  const current = result?.key === quoteKey ? result : undefined;
-  const subtotal = current?.quote?.subtotal ?? items.reduce((sum,item) => sum + item.quantity*item.price,0);
-  const shipping = current?.quote ? money(current.quote.shipping) : current?.error ? "محاسبه نشد"
-    : quoteKey ? "در حال محاسبه…" : destination?.province && destination.city ? "پس از بررسی موجودی" : "پس از انتخاب مقصد";
-  return <>
-    <p><span>جمع کالاها</span><strong>{money(subtotal)}</strong></p>
-    {destination && <div className="form-grid">
-      <ProvinceCityFields {...destination} onChange={location => {
-        const { customer } = readCheckoutDraft(draftKey) ?? emptyDraft;
-        writeCheckoutDraft(draftKey,{ ...customer,...location });
-        setDestination(location);
-        setResult(undefined);
-      }}/>
-    </div>}
-    <p aria-live="polite"><span>هزینهٔ ارسال</span><strong>{shipping}</strong></p>
-    {current?.quote && <p className="total"><span>جمع با ارسال</span><strong>{money(current.quote.total)}</strong></p>}
-    {current?.error && <div className="notice error" role="status">{current.error}</div>}
-  </>;
-}
-
 const digits = (value: string) => value.replace(/[۰-۹]/g,(char) => String(char.charCodeAt(0)-1776))
   .replace(/[٠-٩]/g,(char) => String(char.charCodeAt(0)-1632));
 
@@ -203,7 +157,10 @@ export function CheckoutScreen({ saved, customerId }: { saved: import("@/lib/pro
   const draftKey = checkoutDraftKey(customerId);
   const [draft,setDraft] = useState<CheckoutDraft>();
   const [discountCode,setDiscountCode] = useState("");
-  const [priced,setPriced] = useState<{ key: string; quote: Quote }>();
+  const [appliedCode,setAppliedCode] = useState("");
+  const [priced,setPriced] = useState<{ key: string; quote?: Quote; error?: string }>();
+  const [shippingEstimate,setShippingEstimate] = useState<{ key: string; fee: number }>();
+  const [quoteRetry,setQuoteRetry] = useState(0);
   const [error,setError] = useState("");
   const [notice,setNotice] = useState("");
   const [pending,start] = useTransition();
@@ -211,8 +168,15 @@ export function CheckoutScreen({ saved, customerId }: { saved: import("@/lib/pro
   const busy = pending || redirecting;
   const [attempt,setAttempt] = useState("");
   const lines = items.map(({ id,quantity }) => ({ id,quantity }));
-  const pricingKey = JSON.stringify([lines, draft?.customer.province, draft?.customer.city, discountCode]);
-  const pricing = priced?.key === pricingKey ? priced.quote : undefined;
+  const pendingCode = discountCode.trim();
+  const hasUnappliedCode = !!pendingCode && pendingCode !== appliedCode;
+  const destinationKey = ready && lines.length && draft?.customer.province && draft.customer.city
+    ? JSON.stringify([lines,draft.customer.province,draft.customer.city]) : "";
+  const pricingKey = destinationKey ? JSON.stringify([destinationKey,appliedCode,quoteRetry]) : "";
+  const currentPricing = priced?.key === pricingKey ? priced : undefined;
+  const pricing = currentPricing?.quote;
+  const calculating = !!pricingKey && !currentPricing;
+  const shipping = pricing?.shipping ?? (shippingEstimate?.key === destinationKey ? shippingEstimate.fee : undefined);
   const estimate = items.reduce((total,item) => total+item.quantity*item.price,0);
 
   useEffect(() => {
@@ -223,6 +187,22 @@ export function CheckoutScreen({ saved, customerId }: { saved: import("@/lib/pro
     window.addEventListener("pageshow",reset);
     return () => window.removeEventListener("pageshow",reset);
   },[draftKey]);
+
+  useEffect(() => {
+    if (!pricingKey) return;
+    const [quoteLines,province,city] = JSON.parse(destinationKey);
+    let cancelled = false;
+    getQuote(quoteLines,province,city,appliedCode).then(async result => {
+      if (cancelled) return;
+      setPriced({ key:pricingKey,...result });
+      const shippingQuote = result.quote ?? (appliedCode
+        ? (await getQuote(quoteLines,province,city).catch(() => undefined))?.quote : undefined);
+      if (!cancelled && shippingQuote) setShippingEstimate({ key:destinationKey,fee:shippingQuote.shipping });
+    }).catch(() => {
+      if (!cancelled) setPriced({ key:pricingKey,error:"ارتباط با فروشگاه برقرار نشد." });
+    });
+    return () => { cancelled = true; };
+  },[pricingKey,destinationKey,appliedCode]);
 
   if (!ready) return <p>در حال بارگذاری سبد خرید…</p>;
   if (!items.length) return <EmptyBasket/>;
@@ -239,36 +219,36 @@ export function CheckoutScreen({ saved, customerId }: { saved: import("@/lib/pro
   }
   function changeLocation(location: Pick<typeof customer,"province" | "city">) {
     saveDraft({ ...customer,...location });
-    resetPricing();
+    resetDestinationPricing();
   }
-  function resetPricing() {
-    setPriced(undefined); setNotice(""); setError(""); setAttempt("");
+  function resetDestinationPricing() {
+    setPriced(undefined);
+    setShippingEstimate(undefined);
+    setQuoteRetry(count => count+1);
+    resetOrderFeedback();
   }
-  function calculate() {
-    if (busy || !customer.province || !customer.city) return;
-    setError(""); setNotice("");
-    start(async () => {
-      try {
-        const result = await getQuote(lines,customer.province,customer.city,discountCode);
-        setPriced(result.quote && { key: pricingKey, quote: result.quote });
-        if (result.error) setError(result.error);
-      } catch { setError("ارتباط با فروشگاه برقرار نشد. دوباره تلاش کنید."); }
-    });
+  function resetOrderFeedback() {
+    setNotice(""); setError(""); setAttempt("");
+  }
+  function changeDiscount(code: string) {
+    setDiscountCode(code);
+    setAppliedCode("");
+    resetOrderFeedback();
   }
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy || !validateRecipient(event)) return;
-    if (!pricing) { calculate(); return; }
+    if (busy || !pricing || hasUnappliedCode || !validateRecipient(event)) return;
     setError(""); setNotice("");
     const key = attempt || crypto.randomUUID();
     const draftRevision = draft?.revision;
     setAttempt(key);
     start(async () => {
       try {
-        const result = await checkout({ lines,customer,attempt:key,shown:pricing,discountCode });
-        if ("error" in result) { setPriced(undefined); setError(result.error); return; }
+        const result = await checkout({ lines,customer,attempt:key,shown:pricing,discountCode:appliedCode });
+        if ("error" in result) { setError(result.error); return; }
         if ("changed" in result) {
           setPriced({ key: pricingKey, quote: result.changed });
+          setShippingEstimate({ key:destinationKey,fee:result.changed.shipping });
           setNotice("مبلغ تغییر کرده است. جمع جدید را بررسی کنید و سفارش را دوباره تأیید کنید.");
           return;
         }
@@ -284,7 +264,7 @@ export function CheckoutScreen({ saved, customerId }: { saved: import("@/lib/pro
       {saved.length > 0 && <label>آدرس ذخیره‌شده<select value={selected} onChange={event => {
         const id = event.target.value;
         saveDraft(saved.find(a => a.id === id)?.recipient ?? emptyCustomer,id);
-        resetPricing();
+        resetDestinationPricing();
       }}><option value="">ورود دستی</option>{saved.map(a => <option key={a.id} value={a.id}>{a.recipient.name} · {a.recipient.city}، {a.recipient.address}</option>)}</select></label>}
       <div className="form-grid">
         <label><span>نام و نام خانوادگی <span aria-hidden="true">*</span></span><input required name="name" autoComplete="name" minLength={2} value={customer.name} onChange={(event) => field("name",event.target.value)}/></label>
@@ -296,25 +276,24 @@ export function CheckoutScreen({ saved, customerId }: { saved: import("@/lib/pro
     </fieldset>
     <aside className="panel flow summary"><h2>صورتحساب</h2>
       <label>کد تخفیف (اختیاری)<input dir="ltr" maxLength={32} autoComplete="off" spellCheck={false}
-        value={discountCode} disabled={busy} onChange={event => {
-          setDiscountCode(event.target.value);
-          resetPricing();
-        }}/></label>
-      {discountCode && <button type="button" className="button" disabled={busy} onClick={() => {
-        setDiscountCode("");
-        resetPricing();
-      }}>حذف کد تخفیف</button>}
+        value={discountCode} disabled={busy} onChange={event => changeDiscount(event.target.value)}/></label>
+      {hasUnappliedCode &&
+        <button type="button" className="button" disabled={busy || !destinationKey} onClick={() => {
+          setAppliedCode(pendingCode);
+          resetOrderFeedback();
+        }}>اعمال کد تخفیف</button>}
+      {discountCode && <button type="button" className="button" disabled={busy} onClick={() => changeDiscount("")}>حذف کد تخفیف</button>}
       <p><span>جمع کالاها</span><strong>{money(pricing?.subtotal ?? estimate)}</strong></p>
-      <p><span>هزینهٔ ارسال</span><strong>{pricing ? money(pricing.shipping) : "پس از محاسبه"}</strong></p>
+      <p aria-live="polite"><span>هزینهٔ ارسال</span><strong>{shipping !== undefined ? money(shipping)
+        : calculating ? "در حال محاسبه…" : destinationKey ? "محاسبه نشد" : "پس از انتخاب استان و شهر"}</strong></p>
       {pricing?.discount && <p><span>تخفیف <bdi>{pricing.discount.code}</bdi></span><strong>{money(pricing.discount.amount)}</strong></p>}
+      {calculating && appliedCode && <div role="status">در حال بررسی کد تخفیف…</div>}
       {pricing && <p className="total"><span>مبلغ پرداخت</span><strong>{money(pricing.total)}</strong></p>}
+      {currentPricing?.error && <div className="notice error" role="alert">{currentPricing.error} <button type="button"
+        className="button" onClick={() => setQuoteRetry(count => count+1)}>تلاش دوباره</button></div>}
       {error && <div className="notice error" role="alert">{error}</div>}
       {notice && <div className="notice" role="status">{notice}</div>}
-      {!pricing ? <PendingButton type="button" className="button primary" disabled={!customer.province || !customer.city} busy={busy}
-        pendingLabel="در حال محاسبهٔ مبلغ…" onClick={calculate}>
-          {discountCode.trim() ? "اعمال کد و محاسبهٔ مبلغ" : "محاسبهٔ مبلغ"}
-        </PendingButton>
-        : <PendingButton className="button primary" busy={busy} type="submit"
+      {pricing && <PendingButton className="button primary" busy={busy} disabled={hasUnappliedCode} type="submit"
             pendingLabel={pricing.total === 0 ? "در حال ثبت سفارش…" : "در حال اتصال به درگاه…"}>
           {pricing.total === 0 ? "ثبت سفارش" : "تأیید و پرداخت"} <ArrowLeft size={17}/>
         </PendingButton>}
