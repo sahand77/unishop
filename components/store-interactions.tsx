@@ -4,7 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ArrowLeft, ImageOff, Minus, Search, Plus, ShoppingBag, Trash2 } from "lucide-react";
-import { checkout, getQuote } from "@/app/actions";
+import { checkout, getCartAvailability, getQuote } from "@/app/actions";
 import { fa, money, provinces, type Quote } from "@/lib/shared";
 import { useCart } from "./cart-context";
 import { PendingButton } from "./pending-button";
@@ -31,22 +31,85 @@ export function CartLink() {
 
 export function CartScreen() {
   const { items, ready, setQuantity } = useCart();
+  const offerKey = JSON.stringify([...new Set(items.map(({ id }) => id))].sort());
+  const [stock,setStock] = useState<{ key: string; available: Map<string,number> | null }>();
+  const [retry,setRetry] = useState(0);
+
+  useEffect(() => {
+    const ids: string[] = JSON.parse(offerKey);
+    if (!ready || !ids.length) return;
+    let cancelled = false;
+    let pending = false;
+
+    async function refresh() {
+      if (pending) return;
+      pending = true;
+      try {
+        const batches = [];
+        for (let index = 0; index < ids.length; index += 50) {
+          batches.push(getCartAvailability(ids.slice(index,index+50)));
+        }
+        const offers = (await Promise.all(batches)).flat();
+        if (!cancelled) setStock({ key:offerKey,available:new Map(offers.map(({ id,available }) => [id,available])) });
+      } catch {
+        if (!cancelled) setStock({ key:offerKey,available:null });
+      } finally {
+        pending = false;
+      }
+    }
+
+    function refreshIfVisible() {
+      if (document.visibilityState === "visible") void refresh();
+    }
+
+    void refresh();
+    window.addEventListener("focus",refreshIfVisible);
+    document.addEventListener("visibilitychange",refreshIfVisible);
+    const timer = window.setInterval(refreshIfVisible,30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      window.removeEventListener("focus",refreshIfVisible);
+      document.removeEventListener("visibilitychange",refreshIfVisible);
+    };
+  },[offerKey,ready,retry]);
+
+  const available = stock?.key === offerKey ? stock.available : undefined;
+  const lines = items.map((item) => {
+    const limit = Math.min(available?.get(item.id) ?? 0,99);
+    return { item,limit,stockIssue:!!available && item.quantity > limit };
+  });
+  const hasStockIssue = lines.some(({ stockIssue }) => stockIssue);
   const subtotal = items.reduce((sum,item) => sum + item.quantity*item.price,0);
   if (!ready) return <p>در حال بارگذاری سبد خرید…</p>;
   if (!items.length) return <EmptyBasket/>;
   return <div className="split">
-    <div className="panel basket">{items.map((item) => <article key={item.id} className="basket-item">
+    <div className="panel basket">{lines.map(({ item,limit,stockIssue }) => (
+      <article key={item.id} className="basket-item" data-stock-issue={stockIssue}>
       <ProductImage className="basket-image" src={item.image} title={item.title}/>
       <div><Link href={`/products/${item.productId}`}><strong>{item.title}</strong></Link>
-        {item.variant && <p>{item.variant}</p>}<span>{money(item.price)}</span></div>
+        {item.variant && <p>{item.variant}</p>}<span>{money(item.price)}</span>
+        {stockIssue && <p className="basket-stock-error" role="alert">
+          {limit <= 0 ? "این گزینه دیگر موجود نیست. آن را از سبد حذف کنید."
+            : `تعداد در سبد ${fa(item.quantity)} است. حداکثر ${fa(limit)} عدد قابل سفارش است.`}
+        </p>}
+        {available && !stockIssue && item.quantity === limit && <p>حداکثر تعداد قابل سفارش در سبد است.</p>}
+      </div>
       <div className="basket-actions"><div className="stepper">
-        <button type="button" aria-label="افزایش تعداد" disabled={item.quantity >= 99} onClick={() => setQuantity(item.id,item.quantity+1)}><Plus size={16}/></button>
+        <button type="button" aria-label="افزایش تعداد" disabled={!available || item.quantity >= limit}
+          onClick={() => setQuantity(item.id,item.quantity+1)}><Plus size={16}/></button>
         <span>{fa(item.quantity)}</span>
         <button type="button" aria-label="کاهش تعداد" onClick={() => setQuantity(item.id,item.quantity-1)}><Minus size={16}/></button>
       </div><button className="icon-link" type="button" aria-label="حذف کالا" onClick={() => setQuantity(item.id,0)}><Trash2 size={17}/></button></div>
-    </article>)}</div>
+      </article>
+    ))}</div>
     <aside className="panel flow summary"><h2>خلاصهٔ سبد</h2><p><span>جمع کالاها</span><strong>{money(subtotal)}</strong></p>
-      <Link className="button primary" href="/checkout">ادامه و ثبت سفارش <ArrowLeft size={17}/></Link>
+      {available === undefined && <div role="status">در حال بررسی موجودی کالاها…</div>}
+      {available === null && <div className="notice error" role="status">موجودی کالاها بررسی نشد. <button type="button" className="button"
+        onClick={() => { setStock(undefined); setRetry((count) => count+1); }}>تلاش دوباره</button></div>}
+      {hasStockIssue && <div className="notice error">تعداد کالاهای مشخص‌شده را اصلاح کنید تا بتوانید سفارش را ادامه دهید.</div>}
+      {available && !hasStockIssue ? <Link className="button primary" href="/checkout">ادامه و ثبت سفارش <ArrowLeft size={17}/></Link>
+        : <button className="button primary" type="button" disabled>ادامه و ثبت سفارش <ArrowLeft size={17}/></button>}
     </aside>
   </div>;
 }

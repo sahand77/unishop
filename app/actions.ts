@@ -7,7 +7,7 @@ import { basalamDraft, basalamId, productReels } from "@/lib/basalam";
 import { currentCustomer } from "@/lib/customer-auth";
 import { login, logout, requireAdmin } from "@/lib/auth";
 import { saveCategory, saveProduct } from "@/lib/catalog";
-import { cancelOrder, customerSchema, order, quote, reserveOrder } from "@/lib/checkout";
+import { cancelOrder, cartAvailability, customerSchema, order, quote, reserveOrder } from "@/lib/checkout";
 import { db } from "@/lib/db";
 import { parseEnamadEmbed } from "@/lib/enamad";
 import { saveCredential, type Integration } from "@/lib/integration-settings";
@@ -182,6 +182,10 @@ export async function cancelAdminOrder(id: string) {
   revalidatePath("/admin");
   revalidatePath(adminPath);
   redirect(adminPath);
+}
+
+export async function getCartAvailability(ids: unknown) {
+  return cartAvailability(ids);
 }
 
 export async function getQuote(lines: unknown, province: unknown) {

@@ -134,6 +134,9 @@ fieldset { padding:0; margin:0; border:0; min-inline-size:0; }
 .basket-item + .basket-item { border-top:1px solid var(--line); }
 .basket-image { width:64px; height:64px; object-fit:cover; border-radius:8px; }
 .basket-item p,.basket-item div > span { color:var(--muted); font-size:.83rem; }
+.basket-item[data-stock-issue="true"] { background:#fff1f1; box-shadow:inset -3px 0 var(--danger); padding-inline:10px; }
+.basket-item .basket-stock-error { margin-block-start:4px; color:var(--danger); font-weight:700; }
+.basket-item[data-stock-issue="true"] .stepper span { color:var(--danger); }
 .basket-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .stepper { display:flex; align-items:center; border:1px solid var(--line); border-radius:8px; }
 .stepper button { background:white; border:0; width:32px; height:38px; border-radius:8px; color:var(--primary); display:grid; place-items:center; }

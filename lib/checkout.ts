@@ -6,9 +6,13 @@ import { db, transaction } from "./db";
 import { matchingRule, rules } from "./shipping";
 import { provinces, type FulfillmentStatus, type Quote, type paymentLabels } from "./shared";
 
+const offerId = z.string().regex(/^[a-z0-9-]{1,80}$/i);
 export const linesSchema = z.array(z.object({
-  id: z.string().regex(/^[a-z0-9-]{1,80}$/i), quantity: z.number().int().min(1).max(99),
+  id: offerId, quantity: z.number().int().min(1).max(99),
 })).min(1).max(50).refine((lines) => new Set(lines.map((line) => line.id)).size === lines.length);
+const cartOfferIds = z.array(offerId).min(1).max(50);
+const purchasableOffers = `FROM offers o JOIN products p ON p.id=o.product_id
+  WHERE o.id=ANY($1::text[]) AND o.active=1 AND o.archived=0 AND p.status='published'`;
 export const provinceSchema = z.enum(provinces);
 export { customerSchema } from "./recipient";
 export type { Customer } from "./recipient";
@@ -43,6 +47,13 @@ export async function orders() {
   return rows.map(readOrder);
 }
 
+export async function cartAvailability(input: unknown) {
+  const ids = cartOfferIds.parse(input);
+  const { rows } = await db().query<Pick<QuoteRow,"id" | "available">>(
+    `SELECT o.id,o.stock-o.reserved AS available ${purchasableOffers}`,[ids]);
+  return rows;
+}
+
 export async function quote(input: unknown, destination: unknown, client: PoolClient | ReturnType<typeof db> = db()): Promise<Quote> {
   const lines = linesSchema.safeParse(input);
   const province = provinceSchema.safeParse(destination);
@@ -50,8 +61,7 @@ export async function quote(input: unknown, destination: unknown, client: PoolCl
   const { rows } = await client.query<QuoteRow>(`SELECT o.id,p.title,o.price,o.weight,
     CASE WHEN p.gallery @> jsonb_build_array(jsonb_build_object('kind','video','url',o.image)) THEN p.image ELSE coalesce(nullif(o.image,''),p.image) END AS image,o.stock-o.reserved AS available,
     p.category_id AS category,p.attributes,o.options
-    FROM offers o JOIN products p ON p.id=o.product_id
-    WHERE o.id=ANY($1::text[]) AND o.active=1 AND o.archived=0 AND p.status='published'`,[lines.data.map((line) => line.id)]);
+    ${purchasableOffers}`,[lines.data.map((line) => line.id)]);
   const offers = new Map(rows.map((row) => [row.id,row]));
   const categoryIds = new Set<string>();
   let subtotal = 0;
