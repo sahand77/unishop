@@ -198,7 +198,8 @@ export function CheckoutScreen({ saved, customerId }: { saved: import("@/lib/pro
   const { items, ready } = useCart();
   const draftKey = checkoutDraftKey(customerId);
   const [draft,setDraft] = useState<CheckoutDraft>();
-  const [pricing,setPricing] = useState<Quote>();
+  const [discountCode,setDiscountCode] = useState("");
+  const [priced,setPriced] = useState<{ key: string; quote: Quote }>();
   const [error,setError] = useState("");
   const [notice,setNotice] = useState("");
   const [pending,start] = useTransition();
@@ -206,6 +207,8 @@ export function CheckoutScreen({ saved, customerId }: { saved: import("@/lib/pro
   const busy = pending || redirecting;
   const [attempt,setAttempt] = useState("");
   const lines = items.map(({ id,quantity }) => ({ id,quantity }));
+  const pricingKey = JSON.stringify([lines, draft?.customer.province, draft?.customer.city, discountCode]);
+  const pricing = priced?.key === pricingKey ? priced.quote : undefined;
   const estimate = items.reduce((total,item) => total+item.quantity*item.price,0);
 
   useEffect(() => {
@@ -232,15 +235,18 @@ export function CheckoutScreen({ saved, customerId }: { saved: import("@/lib/pro
   }
   function changeLocation(location: Pick<typeof customer,"province" | "city">) {
     saveDraft({ ...customer,...location });
-    setPricing(undefined); setNotice(""); setError(""); setAttempt("");
+    resetPricing();
+  }
+  function resetPricing() {
+    setPriced(undefined); setNotice(""); setError(""); setAttempt("");
   }
   function calculate() {
     if (busy || !customer.province || !customer.city) return;
     setError(""); setNotice("");
     start(async () => {
       try {
-        const result = await getQuote(lines,customer.province,customer.city);
-        setPricing(result.quote);
+        const result = await getQuote(lines,customer.province,customer.city,discountCode);
+        setPriced(result.quote && { key: pricingKey, quote: result.quote });
         if (result.error) setError(result.error);
       } catch { setError("ارتباط با فروشگاه برقرار نشد. دوباره تلاش کنید."); }
     });
@@ -255,9 +261,13 @@ export function CheckoutScreen({ saved, customerId }: { saved: import("@/lib/pro
     setAttempt(key);
     start(async () => {
       try {
-        const result = await checkout({ lines,customer,attempt:key,shown:pricing });
-        if ("error" in result) { setError(result.error); return; }
-        if ("changed" in result) { setPricing(result.changed); setNotice("مبلغ تغییر کرده است. جمع جدید را بررسی کنید و دوباره دکمهٔ پرداخت را بزنید."); return; }
+        const result = await checkout({ lines,customer,attempt:key,shown:pricing,discountCode });
+        if ("error" in result) { setPriced(undefined); setError(result.error); return; }
+        if ("changed" in result) {
+          setPriced({ key: pricingKey, quote: result.changed });
+          setNotice("مبلغ تغییر کرده است. جمع جدید را بررسی کنید و سفارش را دوباره تأیید کنید.");
+          return;
+        }
         try { localStorage.setItem(`unishop-paid-${result.orderId}`,JSON.stringify({ lines,draftRevision })); } catch { /* Checkout can continue without cart storage. */ }
         window.location.assign(result.url);
         setRedirecting(true);
@@ -270,7 +280,7 @@ export function CheckoutScreen({ saved, customerId }: { saved: import("@/lib/pro
       {saved.length > 0 && <label>آدرس ذخیره‌شده<select value={selected} onChange={event => {
         const id = event.target.value;
         saveDraft(saved.find(a => a.id === id)?.recipient ?? emptyCustomer,id);
-        setPricing(undefined); setAttempt(""); setError(""); setNotice("");
+        resetPricing();
       }}><option value="">ورود دستی</option>{saved.map(a => <option key={a.id} value={a.id}>{a.recipient.name} · {a.recipient.city}، {a.recipient.address}</option>)}</select></label>}
       <div className="form-grid">
         <label><span>نام و نام خانوادگی <span aria-hidden="true">*</span></span><input required name="name" autoComplete="name" minLength={2} value={customer.name} onChange={(event) => field("name",event.target.value)}/></label>
@@ -281,15 +291,28 @@ export function CheckoutScreen({ saved, customerId }: { saved: import("@/lib/pro
       <label><span>نشانی کامل <span aria-hidden="true">*</span></span><textarea required name="address" autoComplete="street-address" minLength={8} value={customer.address} onChange={(event) => field("address",event.target.value)}/></label>
     </fieldset>
     <aside className="panel flow summary"><h2>صورتحساب</h2>
+      <label>کد تخفیف (اختیاری)<input dir="ltr" maxLength={32} autoComplete="off" spellCheck={false}
+        value={discountCode} disabled={busy} onChange={event => {
+          setDiscountCode(event.target.value);
+          resetPricing();
+        }}/></label>
+      {discountCode && <button type="button" className="button" disabled={busy} onClick={() => {
+        setDiscountCode("");
+        resetPricing();
+      }}>حذف کد تخفیف</button>}
       <p><span>جمع کالاها</span><strong>{money(pricing?.subtotal ?? estimate)}</strong></p>
       <p><span>هزینهٔ ارسال</span><strong>{pricing ? money(pricing.shipping) : "پس از محاسبه"}</strong></p>
+      {pricing?.discount && <p><span>تخفیف <bdi>{pricing.discount.code}</bdi></span><strong>{money(pricing.discount.amount)}</strong></p>}
       {pricing && <p className="total"><span>مبلغ پرداخت</span><strong>{money(pricing.total)}</strong></p>}
       {error && <div className="notice error" role="alert">{error}</div>}
       {notice && <div className="notice" role="status">{notice}</div>}
       {!pricing ? <PendingButton type="button" className="button primary" disabled={!customer.province || !customer.city} busy={busy}
-        pendingLabel="در حال محاسبهٔ ارسال…" onClick={calculate}>محاسبهٔ ارسال</PendingButton>
-        : <PendingButton className="button primary" busy={busy} type="submit" pendingLabel="در حال اتصال به درگاه…">
-          تأیید و پرداخت <ArrowLeft size={17}/>
+        pendingLabel="در حال محاسبهٔ مبلغ…" onClick={calculate}>
+          {discountCode.trim() ? "اعمال کد و محاسبهٔ مبلغ" : "محاسبهٔ مبلغ"}
+        </PendingButton>
+        : <PendingButton className="button primary" busy={busy} type="submit"
+            pendingLabel={pricing.total === 0 ? "در حال ثبت سفارش…" : "در حال اتصال به درگاه…"}>
+          {pricing.total === 0 ? "ثبت سفارش" : "تأیید و پرداخت"} <ArrowLeft size={17}/>
         </PendingButton>}
     </aside>
   </form>;

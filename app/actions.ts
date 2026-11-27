@@ -9,6 +9,7 @@ import { login, logout, requireAdmin } from "@/lib/auth";
 import { saveCategory, saveProduct } from "@/lib/catalog";
 import { cancelOrder, cartAvailability, customerSchema, order, quote, reserveOrder } from "@/lib/checkout";
 import { db } from "@/lib/db";
+import { saveDiscount, suggestDiscountCode, type DiscountDraft } from "@/lib/discounts";
 import { parseEnamadEmbed } from "@/lib/enamad";
 import { saveCredential, type Integration } from "@/lib/integration-settings";
 import { gatewayLink, initiate, paymentMode, recheck, resumePayment, verify, validateGateway } from "@/lib/payment";
@@ -165,6 +166,32 @@ export async function removeRule(id: string) {
   revalidatePath("/admin/shipping");
 }
 
+export async function generateDiscountCode() {
+  await requireAdmin();
+  try {
+    return { code: await suggestDiscountCode() };
+  } catch (error) {
+    return { error: message(error) };
+  }
+}
+
+export async function putDiscount(existingCode: string | null, fields: DiscountDraft) {
+  await requireAdmin();
+  try {
+    await saveDiscount({
+      code: existingCode ?? fields.code,
+      pricing: { kind: fields.kind, value: fields.value },
+      active: fields.active,
+      minSubtotal: fields.minSubtotal,
+      maxDiscount: fields.maxDiscount,
+    }, existingCode !== null);
+  } catch (error) {
+    return { error: message(error) };
+  }
+  revalidatePath("/admin/discounts");
+  return {};
+}
+
 export async function retryPayment(id: string) {
   await requireAdmin();
   const item = await order(id);
@@ -188,21 +215,24 @@ export async function getCartAvailability(ids: unknown) {
   return cartAvailability(ids);
 }
 
-export async function getQuote(lines: unknown, province: unknown, city: unknown) {
+export async function getQuote(lines: unknown, province: unknown, city: unknown, discountCode?: unknown) {
   const location = z.string().trim().min(2).max(100).safeParse(city);
   if (!location.success) return { error: "شهر گیرنده را انتخاب کنید." };
   try {
-    return { quote: await quote(lines,province,location.data) };
+    return { quote: await quote(lines,province,location.data,undefined,discountCode) };
   } catch (error) {
     return { error: message(error) };
   }
 }
 
-const displayed = z.object({ subtotal: z.number().int(), shipping: z.number().int(), total: z.number().int() });
+const displayed = z.object({
+  subtotal: z.number().int(), shipping: z.number().int(), total: z.number().int(),
+  discount: z.object({ code: z.string().max(32), amount: z.number().int().nonnegative() }).optional(),
+});
 type CheckoutResult = { url: string; orderId: string } | { changed: Quote } | { error: string };
 
 export async function checkout(input: {
-  lines: unknown; customer: unknown; attempt: string; shown: unknown;
+  lines: unknown; customer: unknown; attempt: string; shown: unknown; discountCode?: unknown;
 }): Promise<CheckoutResult> {
   const customer = customerSchema.safeParse(input.customer);
   const shown = displayed.safeParse(input.shown);
@@ -211,10 +241,11 @@ export async function checkout(input: {
   if (!z.uuid().safeParse(input.attempt).success) return { error: "شناسهٔ ثبت سفارش معتبر نیست." };
   try {
     const mode = paymentMode();
-    await validateGateway(mode);
-    const result = await reserveOrder({ customerId: (await currentCustomer())?.id, lines: input.lines, customer: customer.data, shown: shown.data, attempt: input.attempt, mode });
+    if (shown.data.total > 0) await validateGateway(mode);
+    const result = await reserveOrder({ customerId: (await currentCustomer())?.id, lines: input.lines, customer: customer.data,
+      shown: shown.data, attempt: input.attempt, mode, discountCode: input.discountCode });
     if (result.changed) return { changed: result.changed };
-    const item = result.fresh ? await initiate(result.order) : result.order;
+    const item = result.fresh && result.order.status === "pending" ? await initiate(result.order) : result.order;
     return { url: ["pending","review"].includes(item.status) ? gatewayLink(item) : `/orders/${item.id}?token=${item.secret}`, orderId: item.id };
   } catch (error) {
     return { error: message(error) };

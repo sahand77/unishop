@@ -7,6 +7,7 @@ import { cancelOrder, order, quote, reserveOrder } from "../lib/checkout";
 import { Pool } from "pg";
 import { addresses, customerOrders } from "../lib/profile";
 import { db, closeDb } from "../lib/db";
+import { saveDiscount, suggestDiscountCode } from "../lib/discounts";
 import { saveCredential } from "../lib/integration-settings";
 import { migrate } from "../lib/migrations";
 import { initiate, recheck, resumePayment, verify } from "../lib/payment";
@@ -153,6 +154,88 @@ test("تعرفهٔ شهر بر تعرفهٔ استان و تعرفهٔ سراس�
   } finally {
     await db().query("DELETE FROM shipping WHERE id=$1",[id]);
   }
+});
+
+test("کد پیشنهادی هشت رقمی هنگام ذخیرهٔ فرم ثبت می‌شود", async () => {
+  const code = await suggestDiscountCode();
+  assert.match(code, /^[1-9]\d{7}$/);
+  const discount = { code, pricing: { kind: "percent", value: 10 }, active: true };
+  await saveDiscount(discount, false);
+  await assert.rejects(() => saveDiscount(discount, false), /قبلاً ثبت شده/);
+});
+
+test("کد تخفیف در ثبت سفارش دوباره بررسی می‌شود و مبلغ آن در سفارش می‌ماند", async () => {
+  const { lines } = await inventory();
+  const code = "CHECKOUT_10";
+  const discount = { code, pricing: { kind: "percent", value: 10 }, active: true };
+  await saveDiscount(discount, false);
+  await assert.rejects(() => saveDiscount({ ...discount, code: code.toLowerCase() }, false), /قبلاً ثبت شده/);
+
+  const initial = await quote(lines, customer.province, customer.city, undefined, " checkout_10 ");
+  assert.deepEqual(initial.discount, { code, amount: 10000 });
+  assert.equal(initial.total, initial.subtotal + initial.shipping - 10000);
+  const attempt = { lines, customer, discountCode: code, attempt: randomUUID(), mode: "simulator" as const };
+  await saveDiscount({ ...discount, pricing: { kind: "fixed", value: 25000 } }, true);
+  const changed = await reserveOrder({ ...attempt, shown: initial });
+  assert.deepEqual(changed.changed?.discount, { code, amount: 25000 });
+  assert.ok(changed.changed);
+
+  const reserved = await reserveOrder({ ...attempt, shown: changed.changed });
+  assert.ok(reserved.order);
+  assert.equal(reserved.order.amount, changed.changed.total * 10);
+  await saveDiscount({ ...discount, active: false }, true);
+  assert.deepEqual((await order(reserved.order.id))?.quote.discount, { code, amount: 25000 });
+  const retried = await reserveOrder({ ...attempt, shown: changed.changed });
+  assert.equal(retried.order?.id, reserved.order.id);
+  const other = await inventory();
+  await assert.rejects(() => reserveOrder({ ...attempt, lines: other.lines, attempt: randomUUID(), shown: initial }), /غیرفعال/);
+});
+
+test("تخفیف ثابت حداکثر به اندازهٔ جمع کالاهاست و سفارش صفر تومانی موجودی را کم می‌کند", async () => {
+  const id = randomUUID();
+  const { lines, offer } = await inventory(2);
+  await saveRule({ ...baseRule, id, fee: 0, priority: 0, provinces: ["تهران"] });
+  try {
+    const code = "FREE_CHECKOUT";
+    await saveDiscount({ code, pricing: { kind: "fixed", value: 150000 }, active: true }, false);
+    const shown = await quote(lines, customer.province, customer.city, undefined, code);
+    assert.equal(shown.discount?.amount, shown.subtotal);
+    assert.equal(shown.total, 0);
+    const input = { lines, customer, shown, discountCode: code, attempt: randomUUID(), mode: "simulator" as const };
+    const result = await reserveOrder(input);
+    assert.equal(result.order?.status, "paid");
+    assert.equal(result.order?.authority, null);
+    assert.equal((await reserveOrder(input)).order?.id, result.order?.id);
+    const { rows: [stock] } = await db().query("SELECT stock, reserved FROM offers WHERE id=$1", [offer.id]);
+    assert.deepEqual(stock, { stock: 1, reserved: 0 });
+  } finally {
+    await db().query("DELETE FROM shipping WHERE id=$1", [id]);
+  }
+});
+
+test("حداقل جمع کالاها و سقف تخفیف درصدی هنگام محاسبه و ثبت سفارش اعمال می‌شوند", async () => {
+  const { lines } = await inventory(3);
+  const code = "DISCOUNT_LIMITS";
+  const discount = { code, pricing: { kind: "percent", value: 20 }, active: true, minSubtotal: 200000, maxDiscount: 50000 };
+  const getQuote = (quantity: number) => quote([{ ...lines[0], quantity }], customer.province, customer.city, undefined, code);
+  await saveDiscount({ ...discount, minSubtotal: 110000 }, false);
+  await assert.rejects(() => getQuote(1), /جمع کالاهای سبد باید حداقل/);
+  await saveDiscount(discount, true);
+  assert.equal((await getQuote(2)).discount?.amount, 40000);
+  const shown = await getQuote(3);
+  assert.equal(shown.discount?.amount, 50000);
+
+  const input = { lines: [{ ...lines[0], quantity: 3 }], customer, shown, discountCode: code,
+    attempt: randomUUID(), mode: "simulator" as const };
+  await saveDiscount({ ...discount, maxDiscount: 30000 }, true);
+  const changed = await reserveOrder(input);
+  assert.equal(changed.changed?.discount?.amount, 30000);
+  assert.equal(changed.changed?.total, shown.total + 20000);
+
+  await saveDiscount({ ...discount, pricing: { kind: "fixed", value: 60000 }, minSubtotal: 310000 }, true);
+  await assert.rejects(() => reserveOrder(input), /جمع کالاهای سبد باید حداقل/);
+  await saveDiscount({ ...discount, pricing: { kind: "fixed", value: 60000 } }, true);
+  assert.equal((await getQuote(3)).discount?.amount, 60000);
 });
 
 test("کالاهای پیش‌نویس و ترکیب‌های غیرفعال در خرید در دسترس نیستند", async () => {

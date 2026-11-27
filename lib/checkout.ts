@@ -3,6 +3,7 @@ import { randomUUID, randomBytes } from "node:crypto";
 import { z } from "zod";
 import { variationName } from "./catalog";
 import { db, transaction } from "./db";
+import { appliedDiscount } from "./discounts";
 import { matchingRule, rules } from "./shipping";
 import { provinces, type FulfillmentStatus, type Quote, type paymentLabels } from "./shared";
 
@@ -54,7 +55,7 @@ export async function cartAvailability(input: unknown) {
   return rows;
 }
 
-export async function quote(input: unknown, destination: unknown, city?: string, client: PoolClient | ReturnType<typeof db> = db()): Promise<Quote> {
+export async function quote(input: unknown, destination: unknown, city?: string, client: PoolClient | ReturnType<typeof db> = db(), discountCode?: unknown): Promise<Quote> {
   const lines = linesSchema.safeParse(input);
   const province = provinceSchema.safeParse(destination);
   if (!lines.success || !province.success) throw new Error("سبد خرید و استان را بررسی کنید.");
@@ -79,31 +80,38 @@ export async function quote(input: unknown, destination: unknown, city?: string,
   });
   const rule = matchingRule(await rules(client), { province: province.data, city, categories: categoryIds, quantity, weight, subtotal });
   if (!rule) throw new Error("برای این سبد و مقصد، روش ارسال فعالی تعریف نشده است.");
-  return { subtotal, quantity, weight, shipping: rule.fee, total: subtotal + rule.fee, items };
+  const discount = await appliedDiscount(discountCode, subtotal, client);
+  return { subtotal, quantity, weight, shipping: rule.fee, total: subtotal - (discount?.amount ?? 0) + rule.fee, items,
+    ...(discount && { discount }) };
 }
 
 export function reserveOrder(input: {
-  customerId?: string; lines: unknown; customer: Customer; attempt: string; shown: Pick<Quote, "subtotal" | "shipping" | "total">; mode: Mode;
+  customerId?: string; lines: unknown; customer: Customer; attempt: string; discountCode?: unknown;
+  shown: Pick<Quote, "subtotal" | "shipping" | "total" | "discount">; mode: Mode;
 }) {
   return transaction(async (client) => {
     const { rows:[existing] } = await client.query<OrderRow>("SELECT * FROM orders WHERE attempt=$1",[input.attempt]);
     if (existing && existing.customer_id !== (input.customerId ?? null)) throw new Error("لطفاً سفارش را دوباره ثبت کنید.");
     if (existing) return { order: readOrder(existing), fresh: false } as const;
-    const pricing = await quote(input.lines, input.customer.province,input.customer.city,client);
-    if (pricing.total !== input.shown.total || pricing.shipping !== input.shown.shipping || pricing.subtotal !== input.shown.subtotal) {
+    const pricing = await quote(input.lines, input.customer.province, input.customer.city, client, input.discountCode);
+    if (pricing.total !== input.shown.total || pricing.shipping !== input.shown.shipping || pricing.subtotal !== input.shown.subtotal
+      || pricing.discount?.code !== input.shown.discount?.code || pricing.discount?.amount !== input.shown.discount?.amount) {
       return { changed: pricing } as const;
     }
+    const noPayment = pricing.total === 0;
     for (const item of pricing.items) {
-      const result = await client.query("UPDATE offers SET reserved=reserved+$1 WHERE id=$2 AND stock-reserved>=$1",
-        [item.quantity,item.id]);
+      const result = await client.query(
+        "UPDATE offers SET reserved=reserved+$2,stock=stock-$3 WHERE id=$4 AND stock-reserved>=$1",
+        [item.quantity, noPayment ? 0 : item.quantity, noPayment ? item.quantity : 0, item.id]);
       if (!result.rowCount) throw new Error("موجودی کالا تغییر کرده است.");
     }
     const id = randomUUID();
     const { rows:[created] } = await client.query<OrderRow>(
-      `INSERT INTO orders (id,attempt,secret,customer,quote,amount,mode,status,created,request_started,customer_id)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,'pending',$8,$8,$9) RETURNING *`,
+      `INSERT INTO orders (id,attempt,secret,customer,quote,amount,mode,status,created,request_started,customer_id,message)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,$10,$11) RETURNING *`,
       [id,input.attempt,randomBytes(32).toString("hex"),JSON.stringify(input.customer),
-        JSON.stringify(pricing),pricing.total * 10,input.mode,Date.now(),input.customerId ?? null]);
+        JSON.stringify(pricing),pricing.total * 10,input.mode,noPayment ? "paid" : "pending",Date.now(),
+        input.customerId ?? null,noPayment ? "این سفارش نیازی به پرداخت نداشت." : null]);
     return { order: readOrder(created), fresh: true } as const;
   });
 }

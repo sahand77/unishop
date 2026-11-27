@@ -206,6 +206,11 @@ details.variant { padding:6px 10px; }
 .editor-inline label { flex:1; }
 .editor-inline button { min-width:42px; flex:none; }
 .editor-buttons,.upload-inner { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.discount-code-field { display:flex; flex-wrap:wrap; align-items:end; gap:8px; }
+.discount-code-field label { flex:1 1 14rem; }
+.discount-list-item { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:start; gap:8px; }
+.discount-list-item summary { overflow-wrap:anywhere; }
+.discount-copy p { max-width:15ch; margin:4px 0 0; }
 .upload-preview { width:70px; height:60px; object-fit:cover; border-radius:8px; }
 .footer-social-editor { border:1px solid var(--line); border-radius:9px; padding:12px; }
 .footer-social-editor legend { padding-inline:5px; font-weight:700; }

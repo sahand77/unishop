@@ -46,7 +46,9 @@ export default async function OrderDetail({ params, searchParams }: {
       <table><thead><tr><th>کالا</th><th>ترکیب</th><th>تعداد</th><th>قیمت واحد</th></tr></thead>
         <tbody>{quote.items.map((line) => <tr key={line.id}><td>{line.title}</td><td>{line.variant || "—"}</td>
           <td>{fa(line.quantity)}</td><td>{money(line.price)}</td></tr>)}</tbody></table>
-      <p>جمع کالاها {money(quote.subtotal)} · ارسال {money(quote.shipping)}</p><strong>مبلغ نهایی {money(quote.total)}</strong>
+      <p>جمع کالاها {money(quote.subtotal)} · ارسال {money(quote.shipping)}</p>
+      {quote.discount && <p>تخفیف <bdi>{quote.discount.code}</bdi> · {money(quote.discount.amount)}</p>}
+      <strong>مبلغ نهایی {money(quote.total)}</strong>
     </section>
   </div>;
 }

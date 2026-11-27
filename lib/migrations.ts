@@ -90,5 +90,20 @@ export async function migrate() {
       ALTER TABLE orders ADD COLUMN merchant_id TEXT;
       INSERT INTO schema_migrations VALUES (10);
     `);
+    if (!versions.has(11)) await client.query(`
+      CREATE TABLE discounts (
+        code TEXT PRIMARY KEY CHECK (code ~ '^[A-Z0-9_-]{1,32}$'),
+        kind TEXT NOT NULL CHECK (kind IN ('percent', 'fixed')),
+        value INTEGER NOT NULL CHECK (value BETWEEN 1 AND 1000000000 AND (kind <> 'percent' OR value <= 100)),
+        active BOOLEAN NOT NULL DEFAULT TRUE
+      );
+      INSERT INTO schema_migrations VALUES (11);
+    `);
+    if (!versions.has(12)) await client.query(`
+      ALTER TABLE discounts
+        ADD COLUMN min_subtotal INTEGER CHECK (min_subtotal BETWEEN 1 AND 1000000000),
+        ADD COLUMN max_discount INTEGER CHECK (max_discount IS NULL OR (kind = 'percent' AND max_discount BETWEEN 1 AND 1000000000));
+      INSERT INTO schema_migrations VALUES (12);
+    `);
   });
 }

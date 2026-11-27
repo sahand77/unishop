@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Boxes, ClipboardList, FolderTree, LayoutDashboard, LogOut, Settings2, Store, Truck } from "lucide-react";
+import { Boxes, ClipboardList, FolderTree, LayoutDashboard, LogOut, Settings2, Store, TicketPercent, Truck } from "lucide-react";
 import { signOut } from "@/app/actions";
 import { storeName } from "@/lib/store-settings";
 import { Brand } from "./store-shell";
@@ -10,7 +10,8 @@ export async function AdminShell({ children, username }: { children: React.React
   const links = [
     { label:"پیشخوان",href:"/admin",icon:LayoutDashboard }, { label:"کالاها",href:"/admin/products",icon:Boxes },
     { label:"دسته‌بندی‌ها",href:"/admin/categories",icon:FolderTree }, { label:"قوانین ارسال",href:"/admin/shipping",icon:Truck },
-    { label:"سفارش‌ها",href:"/admin/orders",icon:ClipboardList }, { label:"تنظیمات",href:"/admin/settings",icon:Settings2 },
+    { label:"سفارش‌ها",href:"/admin/orders",icon:ClipboardList }, { label:"کدهای تخفیف",href:"/admin/discounts",icon:TicketPercent },
+    { label:"تنظیمات",href:"/admin/settings",icon:Settings2 },
   ];
   return <div className="admin-shell">
     <aside className="admin-sidebar">

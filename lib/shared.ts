@@ -40,6 +40,7 @@ export type Product = {
 export type CartLine = { id: string; quantity: number };
 export type Quote = {
   subtotal: number; quantity: number; weight: number; shipping: number; total: number;
+  discount?: { code: string; amount: number };
   items: { id: string; title: string; variant: string; quantity: number; price: number; image: string }[];
 };
 export type ShippingRule = {
