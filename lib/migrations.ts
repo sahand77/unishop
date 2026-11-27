@@ -105,5 +105,9 @@ export async function migrate() {
         ADD COLUMN max_discount INTEGER CHECK (max_discount IS NULL OR (kind = 'percent' AND max_discount BETWEEN 1 AND 1000000000));
       INSERT INTO schema_migrations VALUES (12);
     `);
+    if (!versions.has(13)) await client.query(`
+      ALTER TABLE offers ADD COLUMN sale_price INTEGER CHECK (sale_price > 0 AND sale_price < price);
+      INSERT INTO schema_migrations VALUES (13);
+    `);
   });
 }

@@ -34,7 +34,7 @@ export function CartLink() {
 export function CartScreen({ customerId }: { customerId: string | null }) {
   const { items, ready, setQuantity } = useCart();
   const offerKey = JSON.stringify([...new Set(items.map(({ id }) => id))].sort());
-  const [stock,setStock] = useState<{ key: string; available: Map<string,number> | null }>();
+  const [stock,setStock] = useState<{ key: string; available: Map<string,{ available: number; price: number }> | null }>();
   const [retry,setRetry] = useState(0);
 
   useEffect(() => {
@@ -52,7 +52,7 @@ export function CartScreen({ customerId }: { customerId: string | null }) {
           batches.push(getCartAvailability(ids.slice(index,index+50)));
         }
         const offers = (await Promise.all(batches)).flat();
-        if (!cancelled) setStock({ key:offerKey,available:new Map(offers.map(({ id,available }) => [id,available])) });
+        if (!cancelled) setStock({ key:offerKey,available:new Map(offers.map(offer => [offer.id,offer])) });
       } catch {
         if (!cancelled) setStock({ key:offerKey,available:null });
       } finally {
@@ -77,8 +77,12 @@ export function CartScreen({ customerId }: { customerId: string | null }) {
   },[offerKey,ready,retry]);
 
   const available = stock?.key === offerKey ? stock.available : undefined;
-  const lines = items.map((item) => {
-    const limit = Math.min(available?.get(item.id) ?? 0,99);
+  const pricedItems = items.map(item => {
+    const price = available?.get(item.id)?.price ?? item.price;
+    return price === item.price ? item : { ...item, price };
+  });
+  const lines = pricedItems.map((item) => {
+    const limit = Math.min(available?.get(item.id)?.available ?? 0,99);
     return { item,limit,stockIssue:!!available && item.quantity > limit };
   });
   const hasStockIssue = lines.some(({ stockIssue }) => stockIssue);
@@ -105,7 +109,7 @@ export function CartScreen({ customerId }: { customerId: string | null }) {
       </article>
     ))}</div>
     <aside className="panel flow summary"><h2>خلاصهٔ سبد</h2>
-      <CartShippingEstimate customerId={customerId} items={items} canQuote={!!available && !hasStockIssue}/>
+      <CartShippingEstimate customerId={customerId} items={pricedItems} canQuote={!!available && !hasStockIssue}/>
       {available === undefined && <div role="status">در حال بررسی موجودی کالاها…</div>}
       {available === null && <div className="notice error" role="status">موجودی کالاها بررسی نشد. <button type="button" className="button"
         onClick={() => { setStock(undefined); setRetry((count) => count+1); }}>تلاش دوباره</button></div>}

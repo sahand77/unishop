@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 import { categories, product, productPage, saveCategory, saveProduct } from "../lib/catalog";
 import { categoryOptions, categoryPath, categoryTree } from "../lib/category-tree";
-import { cancelOrder, order, quote, reserveOrder } from "../lib/checkout";
+import { cancelOrder, cartAvailability, order, quote, reserveOrder } from "../lib/checkout";
 import { Pool } from "pg";
 import { addresses, customerOrders } from "../lib/profile";
 import { db, closeDb } from "../lib/db";
@@ -45,6 +45,37 @@ async function inventory(stock = 1, categoryId = "") {
   const id = await saveProduct({ ...baseProduct,categoryId,offers:[offer] });
   return { id,offer,lines:[{ id:offer.id,quantity:1 }] };
 }
+
+test("قیمت با تخفیف ذخیره و در سبد و سفارش اعمال می‌شود", async () => {
+  const { id,offer,lines } = await inventory(2);
+  const input = { ...baseProduct,id,categoryId:"",offers:[{ ...offer,salePrice:75000 }] };
+  const shipping = { ...baseRule,id:randomUUID(),name:"ارسال کالای تخفیف‌دار",priority:0,fee:5000,
+    minSubtotal:70000,maxSubtotal:80000 };
+  await db().query("INSERT INTO shipping (id,priority,config) VALUES ($1,$2,$3)",
+    [shipping.id,shipping.priority,JSON.stringify(shipping)]);
+  try {
+    assert.equal((await product(id))?.offers[0].salePrice,null);
+    await assert.rejects(() => saveProduct({ ...input,offers:[{ ...offer,salePrice:offer.price }] }),
+      /کمتر از قیمت اصلی/);
+    await saveProduct(input);
+    const saved = (await product(id))?.offers[0];
+    assert.equal(saved?.price,100000);
+    assert.equal(saved?.salePrice,75000);
+    assert.deepEqual(await cartAvailability([offer.id]),[{ id:offer.id,available:2,price:75000 }]);
+    const shown = await quote(lines,customer.province,customer.city);
+    assert.equal(shown.items[0].price,75000);
+    assert.equal(shown.subtotal,75000);
+    const result = await reserveOrder({ lines,customer,shown,attempt:randomUUID(),mode:"simulator" });
+    assert.ok(result.order);
+    assert.equal(result.order.amount,800000);
+    await saveProduct({ ...input,offers:[{ ...offer,salePrice:null }] });
+    assert.equal((await product(id))?.offers[0].salePrice,null);
+    assert.equal((await cartAvailability([offer.id]))[0].price,100000);
+    assert.equal((await order(result.order.id))?.quote.items[0].price,75000);
+  } finally {
+    await db().query("DELETE FROM shipping WHERE id=$1",[shipping.id]);
+  }
+});
 
 test("صفحه‌بندی کالا پس از اعمال فیلترهای فروشگاه انجام می‌شود", async () => {
   const category = randomUUID();

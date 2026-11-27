@@ -19,7 +19,7 @@ const attributeSchema = z.object({
   values: z.array(z.object({ id, name: z.string().trim().min(1).max(60) })).min(1).max(30),
 });
 const offerSchema = z.object({
-  id, options: z.record(id, id), price: integer, expectedStock: integer.optional(),
+  id, options: z.record(id, id), price: integer, salePrice: integer.nullable().optional(), expectedStock: integer.optional(),
   stock: integer, weight: integer, sku: z.string().trim().min(1).max(80),
   image: z.union([image,z.string().max(500).regex(videoUrl)]), active: z.boolean(),
 }).refine((offer) => !offer.active || offer.price > 0);
@@ -37,7 +37,7 @@ const productSelect = `SELECT p.id, p.title, p.description, coalesce(p.category_
   FROM products p
   LEFT JOIN LATERAL (
     SELECT json_agg(o ORDER BY o.sequence) AS offers FROM (
-      SELECT id,options,price,stock,weight,sku,image,active,reserved,sequence
+      SELECT id,options,price,sale_price AS "salePrice",stock,weight,sku,image,active,reserved,sequence
       FROM offers WHERE product_id=p.id AND archived=0
     ) o
   ) v ON true`;
@@ -45,8 +45,8 @@ const productSelect = `SELECT p.id, p.title, p.description, coalesce(p.category_
 function hydrate(row: ProductRow): Product {
   return {
     ...row, attributes: JSON.parse(row.attributes),
-    offers: row.offers.map(({ id,options,price,stock,weight,sku,image,active,reserved }) =>
-      ({ id,options:JSON.parse(options),price,stock,weight,sku,image,active:!!active,reserved })),
+    offers: row.offers.map(({ id,options,price,salePrice,stock,weight,sku,image,active,reserved }) =>
+      ({ id,options:JSON.parse(options),price,salePrice,stock,weight,sku,image,active:!!active,reserved })),
   };
 }
 
@@ -150,6 +150,9 @@ export async function saveProduct(input: unknown, createOnly = false) {
     throw new Error("ترکیب و کد کالا باید یکتا باشند.");
   }
   for (const offer of offers) {
+    if (offer.salePrice != null && (offer.salePrice < 1 || offer.salePrice >= offer.price)) {
+      throw new Error("قیمت با تخفیف باید بیشتر از صفر و کمتر از قیمت اصلی باشد.");
+    }
     if (Object.keys(offer.options).length !== attributes.length
         || !attributes.every((a) => a.values.some((v) => v.id === offer.options[a.id]))) {
       throw new Error("برای هر ترکیب یک مقدار معتبر از هر ویژگی انتخاب کنید.");
@@ -188,11 +191,11 @@ export async function saveProduct(input: unknown, createOnly = false) {
       item.kind,item.status,cover,JSON.stringify(attributes),Date.now(),JSON.stringify(media)]);
     await client.query("UPDATE offers SET archived=1 WHERE product_id=$1",[productId]);
     for (const offer of offers) {
-      await client.query(`INSERT INTO offers (id,product_id,options,combination,price,stock,weight,sku,image,active)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(id) DO UPDATE SET options=excluded.options,
-        combination=excluded.combination,price=excluded.price,stock=excluded.stock,weight=excluded.weight,
+      await client.query(`INSERT INTO offers (id,product_id,options,combination,price,sale_price,stock,weight,sku,image,active)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT(id) DO UPDATE SET options=excluded.options,
+        combination=excluded.combination,price=excluded.price,sale_price=excluded.sale_price,stock=excluded.stock,weight=excluded.weight,
         sku=excluded.sku,image=excluded.image,active=excluded.active,archived=0`,
-        [offer.id,productId,JSON.stringify(offer.options),selectionKey(offer.options),offer.price,
+        [offer.id,productId,JSON.stringify(offer.options),selectionKey(offer.options),offer.price,offer.salePrice ?? null,
           offer.stock,offer.weight,offer.sku,offer.image,+offer.active]);
     }
     return productId;

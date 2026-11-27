@@ -93,7 +93,8 @@
 .pdp-stock { color: var(--muted); font-size: .87rem; }
 .pdp-stock[data-stock="available"] { color: #1d6450; }
 .pdp-stock[data-stock="unavailable"] { color: #b42318; font-size: 1.15rem; font-weight: 700; }
-.pdp-price-row .detail-price { margin-inline-start: auto; color: var(--ink); font-size: clamp(1.04rem,2.3vw,1.28rem); }
+.pdp-price-row .product-price { margin-inline-start:auto; justify-items:end; font-size:clamp(1.04rem,2.3vw,1.28rem); }
+.pdp-price-row .product-price-discount { justify-content:flex-end; }
 .pdp-actions { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 9px; }
 .pdp-actions .button { width: 100%; min-height: 49px; text-align: center; font-size: .88rem; padding-inline: 8px; }
 .pdp-quantity { display: flex; align-items: center; gap: 7px; font-size: .84rem; }

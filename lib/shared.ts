@@ -27,7 +27,7 @@ export type FulfillmentStatus = keyof typeof fulfillmentLabels;
 export type Attribute = { id: string; name: string; values: { id: string; name: string }[] };
 export type Category = { id: string; name: string; parentId: string | null };
 export type Offer = {
-  id: string; options: Record<string, string>; price: number; stock: number;
+  id: string; options: Record<string, string>; price: number; salePrice: number | null; stock: number;
   weight: number; sku: string; image: string; active: boolean; reserved: number;
 };
 import type { ProductMedia } from "./product-media";

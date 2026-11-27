@@ -6,6 +6,7 @@ import { ProductDetail } from "@/components/product-detail";
 import { ProductCards } from "@/components/product-cards";
 import { categories,product,relatedProducts,variationName } from "@/lib/catalog";
 import { categoryPath } from "@/lib/category-tree";
+import { effectivePrice } from "@/lib/product-pricing";
 import { storeName } from "@/lib/store-settings";
 
 type PageProps = { params: Promise<{ id: string }> };
@@ -44,7 +45,7 @@ export default async function ProductPage({ params }: PageProps) {
     offers: offers.map(offer => ({
       "@type": "Offer",
       name: [item.title, variationName(item.attributes, offer.options)].filter(Boolean).join(" - "),
-      price: offer.price * 10,
+      price: effectivePrice(offer) * 10,
       priceCurrency: "IRR",
       availability: offer.stock > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
     })),

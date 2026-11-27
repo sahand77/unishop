@@ -14,6 +14,7 @@ export const linesSchema = z.array(z.object({
 const cartOfferIds = z.array(offerId).min(1).max(50);
 const purchasableOffers = `FROM offers o JOIN products p ON p.id=o.product_id
   WHERE o.id=ANY($1::text[]) AND o.active=1 AND o.archived=0 AND p.status='published'`;
+const unitPrice = "COALESCE(o.sale_price,o.price) AS price";
 export const provinceSchema = z.enum(provinces);
 export { customerSchema } from "./recipient";
 export type { Customer } from "./recipient";
@@ -50,8 +51,8 @@ export async function orders() {
 
 export async function cartAvailability(input: unknown) {
   const ids = cartOfferIds.parse(input);
-  const { rows } = await db().query<Pick<QuoteRow,"id" | "available">>(
-    `SELECT o.id,o.stock-o.reserved AS available ${purchasableOffers}`,[ids]);
+  const { rows } = await db().query<Pick<QuoteRow,"id" | "available" | "price">>(
+    `SELECT o.id,o.stock-o.reserved AS available,${unitPrice} ${purchasableOffers}`,[ids]);
   return rows;
 }
 
@@ -59,7 +60,7 @@ export async function quote(input: unknown, destination: unknown, city?: string,
   const lines = linesSchema.safeParse(input);
   const province = provinceSchema.safeParse(destination);
   if (!lines.success || !province.success) throw new Error("سبد خرید و استان را بررسی کنید.");
-  const { rows } = await client.query<QuoteRow>(`SELECT o.id,p.title,o.price,o.weight,
+  const { rows } = await client.query<QuoteRow>(`SELECT o.id,p.title,${unitPrice},o.weight,
     CASE WHEN p.gallery @> jsonb_build_array(jsonb_build_object('kind','video','url',o.image)) THEN p.image ELSE coalesce(nullif(o.image,''),p.image) END AS image,o.stock-o.reserved AS available,
     p.category_id AS category,p.attributes,o.options
     ${purchasableOffers}`,[lines.data.map((line) => line.id)]);

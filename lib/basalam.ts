@@ -53,7 +53,7 @@ export function basalamDraft(raw: unknown, reels: string[] = []) {
   function offer(price: number | null | undefined, stock: number | null | undefined, sku?: string | null): Offer {
     const id = crypto.randomUUID();
     const toman = Math.round((price ?? 0) / 10);
-    return { id, options:{}, price:toman, stock:Math.floor(stock ?? 0), weight:Math.round(p.packaged_weight ?? p.net_weight ?? 0),
+    return { id, options:{}, price:toman, salePrice:null, stock:Math.floor(stock ?? 0), weight:Math.round(p.packaged_weight ?? p.net_weight ?? 0),
       sku:sku || `US-${id.slice(0,8)}`, image:"", active:toman > 0, reserved:0 };
   }
   const attributes: Attribute[] = [];

@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import { ImagePlus, Plus, Save, Sparkles, Trash2 } from "lucide-react";
 import { previewBasalam, putCategory, putIntegration, putProduct, putStoreEnamad, putStoreFooter, putStoreName, signIn } from "@/app/actions";
 import { categoryOptions } from "@/lib/category-tree";
+import { digits } from "@/lib/contact";
 import { enamadCodeLimit } from "@/lib/enamad";
+import { discountPercent, effectivePrice } from "@/lib/product-pricing";
 import type { CredentialSource, Integration } from "@/lib/integration-settings";
 import { fa, money, selectionKey, type Attribute, type Category, type Offer, type Product } from "@/lib/shared";
 import type { ProductMedia } from "@/lib/product-media";
@@ -176,7 +178,7 @@ function ImageField({ image,onChange,onBusy,label,onPreview }: {
   </div>;
 }
 
-const empty: Offer = { id:"",options:{},price:0,stock:0,weight:0,sku:"",image:"",active:false,reserved:0 };
+const empty: Offer = { id:"",options:{},price:0,salePrice:null,stock:0,weight:0,sku:"",image:"",active:false,reserved:0 };
 function newOffer(options: Record<string,string>): Offer {
   const id = crypto.randomUUID();
   return { ...empty,id,options,sku:`US-${id.slice(0,8)}` };
@@ -186,13 +188,33 @@ function OfferFields({ item,update,media,defaultMedia,onPreview }: {
   item: Offer; update: (patch: Partial<Offer>) => void; media?: ProductMedia[];
   defaultMedia?: ProductMedia; onPreview?: ShowMediaPreview;
 }) {
+  const [percentText,setPercentText] = useState<string | null>(null);
+  const percent = discountPercent(item);
   const fields = [
-    ["price","قیمت به تومان",item.active ? 1 : 0], ["stock","موجودی کل",item.reserved], ["weight","وزن به گرم",0],
+    ["stock","موجودی کل",item.reserved], ["weight","وزن به گرم",0],
   ] as const;
   return <div className="flow">
+    <div className="form-grid offer-pricing">
+      <label>قیمت اصلی به تومان<AmountInput required min={item.active ? 1 : 0} value={item.price}
+        onChange={price => { setPercentText(null); update({ price:price ?? 0 }); }}/></label>
+      <label>قیمت با تخفیف به تومان<AmountInput min={1} max={item.price - 1} value={item.salePrice} placeholder="اختیاری"
+        onChange={salePrice => { setPercentText(null); update({ salePrice }); }}/></label>
+      <label>درصد تخفیف<input type="text" inputMode="decimal" dir="ltr" disabled={item.price < 2}
+        value={percentText ?? (percent === null ? "" : Number(percent.toFixed(8)))}
+        onChange={event => {
+          const value = digits(event.target.value).replace(/[٫,]/g,".");
+          if (!/^\d{0,3}(?:\.\d{0,8})?$/.test(value)) return;
+          setPercentText(value);
+          const entered = Number(value);
+          update({ salePrice:entered > 0 ? Math.max(0,Math.round(item.price * (1 - entered / 100))) : null });
+        }}
+        onBlur={() => {
+          if (percent !== null || item.salePrice === null) setPercentText(null);
+        }}/></label>
+    </div>
     <div className="form-grid">
       {fields.map(([key,label,min]) => <label key={key}>{label}
-        {key === "price" ? <AmountInput required min={min} value={item.price} onChange={price => update({price: price ?? 0})}/> : <input type="number" required min={min} max={1000000000} value={item[key]} onChange={(event) => update({ [key]:Number(event.target.value) })}/>}
+        <input type="number" required min={min} max={1000000000} value={item[key]} onChange={(event) => update({ [key]:Number(event.target.value) })}/>
         {key === "stock" && item.reserved > 0 && <small>{fa(item.reserved)} عدد رزرو شده</small>}
       </label>)}
       <label>کد کالا<input required maxLength={80} dir="ltr" value={item.sku} onChange={(event) => update({ sku:event.target.value })}/></label>
@@ -361,7 +383,7 @@ export function ProductForm({ initial,categories }: { initial?: Product; categor
       }} onBusy={changeBusy} onPreview={showPreview}/>
     </fieldset>
     {kind === "simple" ? <fieldset className="panel flow" disabled={pending || importing}>
-      <h2>قیمت و موجودی</h2><OfferFields item={{ ...simple,active:false }} update={(patch) => setSimple((before) => ({ ...before,...patch }))}/>
+      <h2>قیمت و موجودی</h2><OfferFields key={simple.id} item={{ ...simple,active:false }} update={(patch) => setSimple((before) => ({ ...before,...patch }))}/>
     </fieldset> : <>
       <fieldset className="panel flow" disabled={pending || busy > 0}>
         <h2>ویژگی‌ها</h2>
@@ -396,7 +418,7 @@ export function ProductForm({ initial,categories }: { initial?: Product; categor
             {attributes.map(a => `${a.name}: ${a.values.find(v => v.id === variant.options[a.id])?.name || "—"}`).join(" / ")}
             <span className="muted">{variant.active ? "فعال" : "غیرفعال"}</span>
             <span className="variant-facts">
-              <span>قیمت <b>{money(variant.price)}</b></span>
+              <span>قیمت <b>{money(effectivePrice(variant))}</b></span>
               <span>موجودی کل <b>{fa(variant.stock)}</b></span>
               {variant.image && (gallery.some(entry => entry.url === variant.image && entry.kind === "video") ? <span>▶ ویدئوی ترکیب</span> : <img src={variant.image} alt="عکس ترکیب" loading="lazy"/>)}
             </span>

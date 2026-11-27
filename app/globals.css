@@ -96,6 +96,10 @@ fieldset { padding:0; margin:0; border:0; min-inline-size:0; }
 .card-content h3 { font-weight:800; }
 .card-bottom { display:flex; align-items:center; justify-content:space-between; gap:5px; font-size:.92rem; margin-top:7px; }
 .card-bottom strong { color:var(--primary); }
+.product-price { display:grid; gap:3px; min-width:0; }
+.product-price-discount { display:flex; align-items:center; flex-wrap:wrap; gap:3px 7px; font-size:.86em; }
+.product-price-discount del { color:var(--muted); }
+.product-discount-badge { background:#fbecec; color:var(--danger); border-radius:6px; padding:2px 6px; font-weight:800; }
 .card-arrow { display:grid; place-items:center; border-radius:7px; background:var(--mint); color:var(--primary); width:30px; height:30px; flex:none; }
 .footer-inner { display:flex; flex-wrap:wrap; align-items:flex-start; gap:clamp(18px,4vw,48px); padding-block:28px; }
 .store-footer { border-top:1px solid var(--line); background:#eef2ec; margin-top:auto; }
@@ -123,7 +127,6 @@ fieldset { padding:0; margin:0; border:0; min-inline-size:0; }
 .variant-photos button:has(img) { padding:3px; }
 .variant-photos img { display:block; width:52px; height:52px; object-fit:cover; border-radius:4px; }
 .variant-photos button[aria-pressed=true] { outline:2px solid var(--primary); }
-.detail-price { color:var(--primary); font-size:1.23rem; font-weight:800; }
 .split { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(0,1fr); align-items:start; gap:16px; }
 .summary p { display:flex; justify-content:space-between; align-items:center; gap:12px; }
 .summary .button { width:100%; }
@@ -144,6 +147,7 @@ fieldset { padding:0; margin:0; border:0; min-inline-size:0; }
 .notice { padding:9px 12px; border-radius:8px; color:var(--primary); background:var(--mint); font-size:.9rem; }
 .notice.error { color:var(--danger); background:#fbecec; }
 .form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.form-grid.offer-pricing { grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr)); }
 label { display:grid; gap:5px; min-width:0; }
 input:not([type=checkbox]):not([type=file]),select,textarea {
   width:100%; min-width:0; color:var(--ink); background:white; border:1px solid #cad7cd; border-radius:8px; padding:8px 10px; min-height:42px;

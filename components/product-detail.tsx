@@ -3,10 +3,12 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Check, ChevronLeft, ChevronRight, CreditCard, Expand, Minus, PackageCheck, Play, Plus, Share2, ShoppingBag, Store, Truck, X } from "lucide-react";
-import { fa, money, selectionKey, type Product } from "@/lib/shared";
+import { effectivePrice, startingPrice } from "@/lib/product-pricing";
+import { fa, selectionKey, type Product } from "@/lib/shared";
 import type { ProductMedia } from "@/lib/product-media";
 import { useCart } from "./cart-context";
 import { ProductImage } from "./store-interactions";
+import { ProductPrice } from "./product-price";
 
 export function ProductDetail({ product, category, storeName }: { product: Product; category?: string; storeName: string }) {
   const { add, items, ready } = useCart();
@@ -20,8 +22,7 @@ export function ProductDetail({ product, category, storeName }: { product: Produ
   const active = product.offers.filter((offer) => offer.active);
   const current = product.kind === "simple" ? active[0]
     : active.find((offer) => selectionKey(offer.options) === selectionKey(selected));
-  const lowest = active.length ? Math.min(...active.map((offer) => offer.price)) : undefined;
-  const hasPriceRange = lowest !== undefined && active.some((offer) => offer.price !== lowest);
+  const starting = startingPrice(active);
   const complete = product.kind === "simple" || Object.keys(selected).length === product.attributes.length;
   const stock = current?.stock ?? 0;
   const inCart = items.find((item) => item.id === current?.id)?.quantity ?? 0;
@@ -50,7 +51,7 @@ export function ProductDetail({ product, category, storeName }: { product: Produ
     if (!current || !canAdd) return;
     const variant = product.attributes.map((attribute) =>
       attribute.values.find((value) => value.id === current.options[attribute.id])?.name).join(" / ");
-    add({ id:current.id,productId:product.id,title:product.title,price:current.price,
+    add({ id:current.id,productId:product.id,title:product.title,price:effectivePrice(current),
       image:media.get(current.image)?.kind === "image" ? current.image : product.image,variant,quantity },stock);
     setRequestedQuantity(1);
     setShowCartFeedback(true);
@@ -74,8 +75,6 @@ export function ProductDetail({ product, category, storeName }: { product: Produ
   const status = current
     ? stock === 0 ? "ناموجود" : stock <= 3 ? `فقط ${fa(stock)} عدد مانده` : "موجود در فروشگاه"
     : complete ? "این ترکیب موجود نیست" : "ویژگی‌های کالا را انتخاب کنید";
-  const price = current ? money(current.price)
-    : !complete && lowest !== undefined ? `${hasPriceRange ? "از " : ""}${money(lowest)}` : "—";
 
   return <div className="product-detail">
     <section className="pdp-gallery" aria-label="عکس و ویدئوی کالا">
@@ -136,7 +135,7 @@ export function ProductDetail({ product, category, storeName }: { product: Produ
       </fieldset>)}
       <div className="pdp-price-row" aria-live="polite">
         <p className="pdp-stock" data-stock={current && stock > 0 ? "available" : complete ? "unavailable" : undefined}>{status}</p>
-        <strong className="detail-price">{price}</strong>
+        <ProductPrice offer={current ?? (!complete ? starting.offer : undefined)} from={!complete && starting.from} empty="—"/>
       </div>
       <div className="pdp-actions">
         <div className="pdp-quantity" role="group" aria-label="تعداد برای افزودن به سبد خرید">
