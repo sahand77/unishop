@@ -1,23 +1,20 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { ArrowLeft, Check, ChevronLeft, ChevronRight, CreditCard, Expand, PackageCheck, Play, Share2, ShoppingBag, Store, Truck, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronLeft, ChevronRight, CreditCard, Expand, Minus, PackageCheck, Play, Plus, Share2, ShoppingBag, Store, Truck, X } from "lucide-react";
 import { fa, money, selectionKey, type Product } from "@/lib/shared";
 import type { ProductMedia } from "@/lib/product-media";
 import { useCart } from "./cart-context";
 import { ProductImage } from "./store-interactions";
-import { PendingButton } from "./pending-button";
 
 export function ProductDetail({ product, category, storeName }: { product: Product; category?: string; storeName: string }) {
-  const router = useRouter();
   const { add, items, ready } = useCart();
   const [selected,setSelected] = useState<Record<string,string>>({});
+  const [requestedQuantity,setRequestedQuantity] = useState(1);
   const [photo,setPhoto] = useState("");
-  const [feedback,setFeedback] = useState("");
+  const [showCartFeedback,setShowCartFeedback] = useState(false);
   const [shareMessage,setShareMessage] = useState("");
-  const [openingCheckout,startNavigation] = useTransition();
   const galleryDialog = useRef<HTMLDialogElement>(null);
 
   const active = product.offers.filter((offer) => offer.active);
@@ -28,8 +25,9 @@ export function ProductDetail({ product, category, storeName }: { product: Produ
   const complete = product.kind === "simple" || Object.keys(selected).length === product.attributes.length;
   const stock = current?.stock ?? 0;
   const inCart = items.find((item) => item.id === current?.id)?.quantity ?? 0;
-  const canAdd = ready && !!current && stock > inCart && inCart < 99;
-  const canBuy = ready && !!current && stock > 0 && (canAdd || (inCart > 0 && inCart <= stock));
+  const remaining = Math.max(0, Math.min(stock,99) - inCart);
+  const quantity = Math.min(requestedQuantity,remaining);
+  const canAdd = ready && quantity > 0;
 
   const media = new Map<string,ProductMedia>();
   const first = product.gallery[0];
@@ -48,16 +46,14 @@ export function ProductDetail({ product, category, storeName }: { product: Produ
     setPhoto(items[(index + direction + items.length) % items.length].url);
   }
 
-  function addItem(proceed: boolean) {
-    if (!current || openingCheckout) return;
-    if (canAdd && (!proceed || !inCart)) {
-      const variant = product.attributes.map((attribute) =>
-        attribute.values.find((value) => value.id === current.options[attribute.id])?.name).join(" / ");
-      add({ id:current.id,productId:product.id,title:product.title,price:current.price,
-        image:media.get(current.image)?.kind === "image" ? current.image : product.image,variant,quantity:1 },stock);
-    }
-    if (proceed) startNavigation(() => router.push("/checkout"));
-    else setFeedback("به سبد خرید اضافه شد.");
+  function addItem() {
+    if (!current || !canAdd) return;
+    const variant = product.attributes.map((attribute) =>
+      attribute.values.find((value) => value.id === current.options[attribute.id])?.name).join(" / ");
+    add({ id:current.id,productId:product.id,title:product.title,price:current.price,
+      image:media.get(current.image)?.kind === "image" ? current.image : product.image,variant,quantity },stock);
+    setRequestedQuantity(1);
+    setShowCartFeedback(true);
   }
 
   async function share() {
@@ -127,7 +123,12 @@ export function ProductDetail({ product, category, storeName }: { product: Produ
               Object.entries(selected).every(([id,choice]) => id === attribute.id || offer.options[id] === choice));
             return <button type="button" key={value.id} data-unavailable={!available} title={available ? undefined : "ناموجود"}
             aria-label={available ? value.name : `${value.name}، ناموجود`} aria-pressed={selected[attribute.id] === value.id}
-            onClick={() => { setSelected({ ...selected,[attribute.id]:value.id }); setPhoto(""); setFeedback(""); }}>
+            onClick={() => {
+              setSelected({ ...selected,[attribute.id]:value.id });
+              setRequestedQuantity(1);
+              setPhoto("");
+              setShowCartFeedback(false);
+            }}>
             {value.name}
           </button>;
           })}
@@ -138,14 +139,30 @@ export function ProductDetail({ product, category, storeName }: { product: Produ
         <strong className="detail-price">{price}</strong>
       </div>
       <div className="pdp-actions">
-        <button type="button" className="button primary" disabled={!canAdd || openingCheckout} onClick={() => addItem(false)}>
-          <ShoppingBag size={19}/> {inCart > 0 && inCart >= Math.min(stock,99) && current ? "سقف تعداد در سبد" : "افزودن به سبد خرید"}
+        <div className="pdp-quantity" role="group" aria-label="تعداد برای افزودن به سبد خرید">
+          <span aria-hidden="true">تعداد</span>
+          <div className="stepper">
+            <button type="button" aria-label="افزایش تعداد" disabled={!canAdd || quantity >= remaining}
+              onClick={() => setRequestedQuantity(quantity + 1)}><Plus size={16} aria-hidden="true"/></button>
+            <span aria-live="polite">{fa(quantity)}</span>
+            <button type="button" aria-label="کاهش تعداد" disabled={!canAdd || quantity <= 1}
+              onClick={() => setRequestedQuantity(quantity - 1)}><Minus size={16} aria-hidden="true"/></button>
+          </div>
+        </div>
+        <button type="button" className="button primary" disabled={!canAdd} onClick={addItem}>
+          <ShoppingBag size={19}/> {inCart > 0 && remaining === 0 ? "سقف تعداد در سبد" : "افزودن به سبد خرید"}
         </button>
-        <PendingButton type="button" className="button pdp-buy-now" disabled={!canBuy} busy={openingCheckout}
-          pendingLabel="در حال باز کردن تسویه…" onClick={() => addItem(true)}>خرید مستقیم</PendingButton>
+        <div className="pdp-cart-feedback" data-visible={showCartFeedback}>
+          <span role="status">{showCartFeedback && <><Check size={17} aria-hidden="true"/>
+            <span>کالا به سبد خرید اضافه شد. تعداد در سبد: {fa(inCart)}</span></>}</span>
+          {showCartFeedback && <div className="pdp-cart-feedback-actions">
+            <Link href="/cart">مشاهدهٔ سبد <ArrowLeft size={15} aria-hidden="true"/></Link>
+            <button type="button" className="icon-link" aria-label="بستن پیام" onClick={() => setShowCartFeedback(false)}>
+              <X size={16} aria-hidden="true"/>
+            </button>
+          </div>}
+        </div>
       </div>
-      {feedback && <div className="pdp-cart-feedback" role="status"><span><Check size={17}/>{feedback}</span>
-        <Link href="/cart">مشاهدهٔ سبد <ArrowLeft size={15}/></Link></div>}
       <div className="pdp-shipping">
         <Truck size={21}/>
         <div><strong>ارسال سفارش</strong><p>هزینهٔ ارسال پس از انتخاب استان در مرحلهٔ ثبت سفارش محاسبه می‌شود.</p></div>

@@ -94,11 +94,23 @@
 .pdp-stock[data-stock="available"] { color: #1d6450; }
 .pdp-stock[data-stock="unavailable"] { color: #b42318; font-size: 1.15rem; font-weight: 700; }
 .pdp-price-row .detail-price { margin-inline-start: auto; color: var(--ink); font-size: clamp(1.04rem,2.3vw,1.28rem); }
-.pdp-actions { display: grid; grid-template-columns: minmax(0,1.6fr) minmax(0,1fr); gap: 9px; }
+.pdp-actions { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 9px; }
 .pdp-actions .button { width: 100%; min-height: 49px; text-align: center; font-size: .88rem; padding-inline: 8px; }
-.pdp-actions .pdp-buy-now { color: var(--primary); border-color: var(--primary); }
-.pdp-cart-feedback { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; background: var(--mint); border-radius: 9px; padding: 8px 12px; font-size: .84rem; }
-.pdp-cart-feedback span,.pdp-cart-feedback a,.pdp-seller a { display: inline-flex; align-items: center; gap: 5px; }
+.pdp-quantity { display: flex; align-items: center; gap: 7px; font-size: .84rem; }
+.pdp-quantity .stepper button { width: 38px; height: 44px; }
+.pdp-quantity .stepper span { min-width: 23px; }
+.pdp-cart-feedback {
+  grid-column: 1 / -1; display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between;
+  gap: 6px 12px; background: var(--mint); border: 1px solid var(--accent); border-radius: 9px; padding: 6px 10px; font-size: .84rem;
+}
+.pdp-cart-feedback[data-visible="false"] { position: absolute; clip-path: inset(50%); }
+.pdp-cart-feedback [role="status"],.pdp-cart-feedback-actions,.pdp-cart-feedback a,.pdp-seller a {
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.pdp-cart-feedback [role="status"] { font-weight: 700; }
+.pdp-cart-feedback svg { flex: none; }
+.pdp-cart-feedback-actions { margin-inline-start: auto; }
+.pdp-cart-feedback .icon-link { width: 32px; min-height: 32px; background: white; }
 .pdp-shipping,.pdp-seller {
   display: flex; align-items: flex-start; gap: 12px; padding: 14px; background: white; border: 1px solid var(--line); border-radius: 12px;
 }
@@ -140,6 +152,7 @@
     padding-bottom: calc(8px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: white;
     box-shadow: 0 -3px 14px #24232a0c;
   }
+  .pdp-cart-feedback[data-visible="true"] { grid-row: 1; }
 }
 @media (max-width: 365px) {
   .store-layout .cart-link > span:not(.cart-count) { display: none; }
